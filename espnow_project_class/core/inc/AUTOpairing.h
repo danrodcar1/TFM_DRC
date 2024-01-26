@@ -71,6 +71,7 @@ static int s_retry_num = 0;
 static QueueHandle_t cola_resultado_enviados;
 static SemaphoreHandle_t semaforo_envio;
 static SemaphoreHandle_t semaforo_listo;
+static SemaphoreHandle_t semaforo_update = NULL;
 TaskHandle_t conexion_hand = NULL;
 
 static uint8_t s_example_broadcast_mac[ESP_NOW_ETH_ALEN] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
@@ -157,6 +158,7 @@ class AUTOpairing_t
 	const char *fw_upgrade_url;
 	const char *wifi_ssid;
 	const char *wifi_pass;
+	bool esp_event_already_run;
 
 public:
 	AUTOpairing_t()
@@ -183,6 +185,7 @@ public:
 		fw_upgrade_url = NULL;
 		wifi_ssid = NULL;
 		wifi_pass = NULL;
+		esp_event_already_run = false;
 	}
 
 	void esp_set_https_update(const string &url, const string &ssid, const string &pass)
@@ -228,6 +231,7 @@ public:
 		 * and hence timings for overall OTA operation.
 		 */
 		esp_wifi_set_ps(WIFI_PS_NONE);
+		//xTaskCreate(&startUpdtTaskimp, "advanced_ota_task", 1024 * 8, NULL, 5, NULL);
 		advance_ota_task();
 	}
 
@@ -304,8 +308,12 @@ public:
 		s_wifi_event_group = xEventGroupCreate();
 
 		ESP_ERROR_CHECK(esp_netif_init());
+		if (!esp_event_already_run)
+		{
+			ESP_LOGI("* advanced https ota", "Creating ESP event loop");
+			ESP_ERROR_CHECK(esp_event_loop_create_default());
+		}
 
-		ESP_ERROR_CHECK(esp_event_loop_create_default());
 		// ESP_HTTPS_OTA_EVENT
 		ESP_ERROR_CHECK(esp_event_handler_register(ESP_HTTPS_OTA_EVENT, ESP_EVENT_ANY_ID, &AUTOpairing_t::ota_event_handler, NULL));
 		esp_netif_create_default_wifi_sta();
@@ -333,11 +341,13 @@ public:
 
 		/* Waiting until either the connection is established (WIFI_CONNECTED_BIT) or connection failed for the maximum
 		 * number of re-tries (WIFI_FAIL_BIT). The bits are set by wifi_event_handler() (see above) */
+
 		EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group,
 											   WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
 											   pdFALSE,
 											   pdFALSE,
 											   portMAX_DELAY);
+
 		ESP_LOGI("* advanced https ota", "before eventBits");
 		/* xEventGroupWaitBits() returns the bits before the call returned, hence we can test which event actually
 		 * happened. */
@@ -419,6 +429,7 @@ public:
 		if (err != ESP_OK)
 		{
 			ESP_LOGE("* advanced https ota", "ESP HTTPS OTA Begin failed");
+			// vTaskDelete(NULL);
 			esp_restart();
 		}
 
@@ -476,10 +487,13 @@ public:
 		}
 
 	ota_end:
+		xSemaphoreGive(semaforo_update);
 		esp_https_ota_abort(https_ota_handle);
 		ESP_LOGE("* advanced https ota", "ESP_HTTPS_OTA upgrade failed");
+		// vTaskDelete(NULL);
 		esp_restart();
 	}
+
 	//-----------------------------------------------------------
 	void print_mac(const uint8_t *mac_addr)
 	{
@@ -682,6 +696,7 @@ public:
 	{
 		ESP_ERROR_CHECK(esp_netif_init());
 		ESP_ERROR_CHECK(esp_event_loop_create_default());
+		esp_event_already_run = true;
 		wifi_init_config_t cfg = esp_wifi_init_config_default();
 		ESP_ERROR_CHECK(esp_wifi_init(&cfg));
 		ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
@@ -729,6 +744,7 @@ public:
 			// set WiFi channel
 			ESP_ERROR_CHECK(esp_netif_init());
 			ESP_ERROR_CHECK(esp_event_loop_create_default());
+			esp_event_already_run = true;
 			wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
 			cfg.nvs_enable = 0;
 			// wifi_init_config_t cfg = esp_wifi_init_config_default();
@@ -907,7 +923,7 @@ public:
 			Utilizar colas.
 			*/
 			my_msg->payload = (char *)malloc(len - PAN_payload_offset + 1);
-			snprintf(my_msg->payload, len - PAN_payload_offset, "%s", (char *)data + PAN_payload_offset);
+			snprintf(my_msg->payload, len + PAN_payload_offset, "%s", (char *)data + PAN_payload_offset);
 			memcpy(my_msg->macAddr, data + PAN_MAC_offset, PAN_MAC_size);
 			memcpy((void *)&my_msg->ms_old, data + PAN_MSold_offset, PAN_MSold_size);
 			if (debug)
@@ -1062,12 +1078,26 @@ public:
 			if (xSemaphoreTake(semaforo_listo, 3000 / portTICK_PERIOD_MS))
 			{
 				ESP_LOGI(TAG, "LIBERANDO SEMAFORO CONEXION");
+				xSemaphoreGive(semaforo_listo);
 				return true;
 			}
 		}
 		// return (pairingStatus == PAIR_PAIRED && mensaje_enviado == false && terminar == false);
 	}
 
+	//-----------------------------------------------------------
+	bool actualizacion_disponible()
+	{
+		while (1)
+		{
+			if (xSemaphoreTake(semaforo_update, 3000 / portTICK_PERIOD_MS))
+			{
+				ESP_LOGI(TAG, "LIBERANDO SEMAFORO UPDATE");
+				return true;
+			}
+		}
+		// return (pairingStatus == PAIR_PAIRED && mensaje_enviado == false && terminar == false);
+	}
 	//--------------------------------------------------------
 	void gotoSleep()
 	{
@@ -1087,13 +1117,18 @@ public:
 	void start_connection_task()
 	{
 		wifi_espnow_init();
-		xTaskCreate(&startTaskImpl, "TASK", 4096, this_object, 1, &conexion_hand);
+		xTaskCreate(&startConnTaskimp, "Connection implicit TASK", 4096, this_object, 1, &conexion_hand);
 	}
 
 private:
-	static void startTaskImpl(void *pvParameters)
+	static void startConnTaskimp(void *pvParameters)
 	{
 		reinterpret_cast<AUTOpairing_t *>(pvParameters)->keep_connection_task();
+	}
+
+	static void startUpdtTaskimp(void *pvParameters)
+	{
+		reinterpret_cast<AUTOpairing_t *>(pvParameters)->advance_ota_task();
 	}
 
 	void keep_connection_task()

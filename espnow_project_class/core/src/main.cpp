@@ -14,8 +14,8 @@ extern "C"
 static AUTOpairing_t clienteAP;
 static ADConeshot_t ADConeshot;
 
-const char *ESP_WIFI_SSID = "HortSost";
-const char *ESP_WIFI_PASS = "9b11c2671e5b";
+const char *ESP_WIFI_SSID = "IoTLab";
+const char *ESP_WIFI_PASS = "4cc3s0IoT@";
 const char *FIRMWARE_UPGRADE_URL = "https://huertociencias.uma.es/ESP32OTA/espnow_project.bin";
 
 UpdateStatus updateStatus = NO_UPDATE_FOUND;
@@ -36,13 +36,16 @@ struct_config strConfig;
 
 struct struct_data
 {
-	uint32_t adc_filtered[ESP_NOW_MAX_MSR]; // Establecer un número máximo de lecturas para almacenar
-	uint32_t adc_voltage[ESP_NOW_MAX_MSR];
-	uint8_t macAddr[6];
-	unsigned long ms_old[ESP_NOW_MAX_MSR];
+	// Establecer un número máximo de lecturas para almacenar
+	uint32_t own_data[ESP_NOW_MAX_MSR][2]; // Datos propios
+	uint32_t peer_data[ESP_NOW_MAX_MSR][2];
+	uint32_t aggr_data[ESP_NOW_MAX_MSR];
 };
 
 RTC_DATA_ATTR struct_data *strData;
+RTC_DATA_ATTR int data_count = 0;
+
+// https://github.com/DaveGamble/cJSON#building
 
 void pan_process_msg(struct_espnow_rcv_msg *my_msg)
 {
@@ -51,40 +54,60 @@ void pan_process_msg(struct_espnow_rcv_msg *my_msg)
 	ESP_LOGI("* PAN process", "MAC: %02X:%02X:%02X:%02X:%02X:%02X", my_msg->macAddr[0], my_msg->macAddr[1], my_msg->macAddr[2], my_msg->macAddr[3], my_msg->macAddr[4], my_msg->macAddr[5]);
 	ESP_LOGI("* PAN process", "Payload: %s", my_msg->payload);
 	ESP_LOGI("* PAN process", "Mi PAN: %d", clienteAP.get_pan());
-	for (int i = 0; i < ESP_NOW_MAX_TOTAL_PEER_NUM; i++)
-	{
-		if (memcmp(my_msg->macAddr, strData[i].macAddr, ESP_NOW_ETH_ALEN) != 0)
-		{
-			memcpy(strData[i].macAddr, my_msg->macAddr, ESP_NOW_ETH_ALEN);
-		}
-	}
-
-	cJSON *root = cJSON_Parse(my_msg->payload);
+	// Parse the JSON data
 	char tag[25];
-	int adc_filtered[lengthADC1_CHAN];
-	int adc_voltage[lengthADC1_CHAN];
+	cJSON *json = cJSON_Parse(my_msg->payload);
+	//  Check if parsing was successful
+	if (json == NULL)
+	{
+		const char *error_ptr = cJSON_GetErrorPtr();
+		if (error_ptr != NULL)
+		{
+			fprintf(stderr, "Error before: %s\n", error_ptr);
+		}
+		cJSON_Delete(json);
+		return;
+	}
 	for (int i = 0; i < lengthADC1_CHAN; i++)
 	{
 		ESP_LOGI(TAG, "Deserialize readings of channel %d", i);
 		sprintf(tag, "Sensor%d", i);
-		cJSON *fmt = cJSON_GetObjectItem(root, tag);
-		/* En principio no sé cuantos sensores traerá la lectura. Si están en el mensaje, lo guardo. Si no, termino de deserializar.*/
-		if (fmt)
+		cJSON *data = cJSON_GetObjectItem(json, tag);
+		// En principio no sé cuantos sensores traerá la lectura. Si están en el mensaje, lo guardo. Si no, termino de deserializar.
+		if (data)
 		{
-			adc_filtered[i] = cJSON_GetObjectItem(fmt, "adc_filtered")->valueint;
-			adc_voltage[i] = cJSON_GetObjectItem(fmt, "adc_voltage")->valueint;
+			cJSON *filt_data = cJSON_GetObjectItem(data, "adc_filtered");
+			cJSON *raw_data = cJSON_GetObjectItem(data, "adc_voltage");
+			strData->peer_data[0][0] = filt_data->valueint;
+			strData->peer_data[0][1] = raw_data->valueint;
+			data_count++;
+			if (data_count == ESP_NOW_MAX_MSR - 1)
+				data_count = 0;
+			ESP_LOGI("Peer_reading", "ADC_FILTERED = %d", filt_data->valueint);
+			ESP_LOGI("Peer_reading", "ADC_VOLTAGE = %d", raw_data->valueint);
 		}
 		else
+		{
+			ESP_LOGI("Peer_reading", "Lectura completa, limpiando buffer");
 			break;
+		}
 	}
-	cJSON_Delete(root);
-	free(my_msg->payload);
+	cJSON_Delete(json);
 }
 
 void mqtt_process_msg(struct_espnow_rcv_msg *my_msg)
 {
 	ESP_LOGI("* mqtt process", "topic: %s", my_msg->topic);
 	cJSON *root = cJSON_Parse(my_msg->payload);
+	if (root == NULL)
+	{
+		const char *error_ptr = cJSON_GetErrorPtr();
+		if (error_ptr != NULL)
+		{
+			fprintf(stderr, "Error before: %s\n", error_ptr);
+		}
+		return;
+	}
 	if (strcmp(my_msg->topic, "config") == 0)
 	{
 		ESP_LOGI("* mqtt process", "payload: %s", my_msg->payload);
@@ -107,14 +130,12 @@ void mqtt_process_msg(struct_espnow_rcv_msg *my_msg)
 	if (strcmp(my_msg->topic, "update") == 0)
 	{
 		updateStatus = THERE_IS_AN_UPDATE_AVAILABLE;
-		// clienteAP.init_update(); ¿Porque funciona en app_main y aqui no? :(
+		clienteAP.init_update(); // ¿Porque funciona en app_main y aqui no? :(
 	}
 	free(my_msg->topic);
 	free(my_msg->payload);
 	cJSON_Delete(root);
 }
-
-
 
 void app_main(void)
 {
@@ -128,7 +149,7 @@ void app_main(void)
 	}
 
 	struct_adclist *my_reads = ADConeshot.set_adc_channel(adc_channel, lengthADC1_CHAN);
-	
+
 	clienteAP.esp_set_https_update(FIRMWARE_UPGRADE_URL, ESP_WIFI_SSID, ESP_WIFI_PASS);
 	clienteAP.set_timeOut(strConfig.timeout, true); // tiempo máximo
 	clienteAP.set_deepSleep(strConfig.tsleep);		// tiempo dormido en segundos
@@ -157,11 +178,20 @@ void app_main(void)
 			ESP_LOGI(TAG, "Serialize readings of channel %d", i);
 			sprintf(tag, "Sensor%d", i);
 			cJSON_AddItemToObject(root, tag, fmt = cJSON_CreateObject());
+
 			cJSON_AddNumberToObject(fmt, "adc_filtered", ADConeshot.get_adc_filtered_read(my_reads, i));
 			cJSON_AddNumberToObject(fmt, "adc_voltage", ADConeshot.get_adc_voltage_read(my_reads, i));
+
+			strData->own_data[0][0] = ADConeshot.get_adc_filtered_read(my_reads, i);
+			strData->own_data[0][1] = ADConeshot.get_adc_voltage_read(my_reads, i);
+			strData->aggr_data[0] = (strData->own_data[0][1] + strData->peer_data[0][1]) / 2;
+			ESP_LOGI(TAG, "own_data_raw:%lu", strData->own_data[0][1]);
+			ESP_LOGI(TAG, "peer_data_raw:%lu", strData->peer_data[0][1]);
+			ESP_LOGI(TAG, "aggregated_data_raw:%lu", strData->aggr_data[0]);
+			cJSON_AddNumberToObject(fmt, "aggr_data", strData->aggr_data[0]);
 		}
 
-		char *my_json_string = cJSON_Print(root);
+		char *my_json_string = cJSON_PrintUnformatted(root);
 		size_t msg_size = strlen(my_json_string);
 		ESP_LOGI(TAG, "my_json_string\n%s", my_json_string);
 		ESP_LOGI("* Tamaño paquete", "El mensaje ocupa %i bytes", msg_size);
