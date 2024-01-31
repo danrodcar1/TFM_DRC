@@ -13,3 +13,9 @@ Class designed in C++ to provide automatic connection to multiple ESP32 devices 
 - `OTA update capability`: The device is capable of receiving over-the-air updates, since when it receives a request via MQTT for an update, it performs the update routine.
 
 ## 📁 Project organization
+
+## ✔️ Technologies used in the project
+
+* [VSCode](https://code.visualstudio.com/) - Programming framework used
+* [NODE-RED](https://nodered.org/) - Cloud data manager
+* [ESP32-C3](https://www.espressif.com/en/products/socs/esp32-c3) - Microcontroller used for testing
