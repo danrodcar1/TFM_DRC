@@ -1,14 +1,14 @@
-Proyecto ESP-NOW Autopairing
+ESP-NOW Autopairing Project
 ============================
 
-Este proyecto está basado en el trabajo de fin de máster del máster en Ingeniería Mecatrónica.
+This project is based on the master's thesis of the master's degree in Mechatronics Engineering.
 
-Las funciones que se encargaban, por ejemplo, de la conexión por ESP-NOW al dispositivo que hacía la función de pasarela, así como el proceso de configuración o ajustes previos y el proceso de actualización OTA, se ha incluido en una clase dentro de la librería “AUTOpairing.h” dentro de core/inc. Por otro lado, el funcionamiento del convertidor ADC se ha modelado en la librería “ADConeshot.h”. La estructura es más sencilla y permite modular el código en diferentes clases que permiten modelar el comportamiento del dispositivo de una manera más eficiente.
+The functions that were in charge, for example, of the ESP-NOW connection to the gateway device, as well as the configuration or presetting process and the OTA update process, have been included in a class within the "AUTOpairing.h" library inside core/inc. On the other hand, the operation of the ADC converter has been modeled in the "ADConeshot.h" library. The structure is simpler and allows to modularize the code in different classes that allow to model the behavior of the device in a more efficient way.
 
-•	La librería “AUTOpairing.h” se ha diseñado para albergar una clase que componen el funcionamiento del auto emparejamiento del dispositivo que se pretende conectar a la pasarela y las funciones que modelan la configuración y conexión al servidor que alojan el fichero para realizar la actualización FOTA. 
+- The "AUTOpairing.h" library has been designed to host a class that compose the auto pairing operation of the device to be connected to the gateway and the functions that model the configuration and connection to the server that hosts the file to perform the FOTA update. 
 
-•	La librería “ADConeshot.h” modela el comportamiento del convertidor analógico-digital. Permite ser configurado, seleccionar el canal y varios parámetros en función de las necesidades que sean requeridas. 
-Este modelado en clases permite, en definitiva, modular y realizar un código más sencillo, cuya funcionalidad se reduce exclusivamente a lo que se pretende realizar. El código funcional está escondido al usuario, de tal modo que este solamente se preocupa de configurar los diferentes parámetros funcionales que necesite.
+- The "ADConeshot.h" library models the behavior of the analog-to-digital converter. It allows to be configured, to select the channel and several parameters depending on the needs that are required. 
+This modeling in classes allows, in short, to modularize and to realize a simpler code, whose functionality is reduced exclusively to what is intended to be realized. The functional code is hidden from the user, so that the user only has to configure the different functional parameters required.
 
 
 *Code in this repository is in the Public Domain (or CC0 licensed, at your option.)
