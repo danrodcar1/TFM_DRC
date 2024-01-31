@@ -1,6 +1,9 @@
-# TFM_DRC
-Repositorio del TFM de Daniel Rodríguez Carrión, basado en una pasarela de conexión automática mediante protocolo ESP-NOW
-##Índice
+<h1> Autoconfigurable wireless sensor network framework for data fusion at the edge </h1>
+
+![Badge en Desarollo](https://img.shields.io/badge/STATUS-EN%20DESAROLLO-green)
+![GitHub Org's stars](https://img.shields.io/github/stars/camilafernanda?style=social)
+
+<h2> Index </h2>
 
 *[Título e imagen de portada](#Título-e-imagen-de-portada)
 
@@ -25,3 +28,5 @@ Repositorio del TFM de Daniel Rodríguez Carrión, basado en una pasarela de con
 * [Licencia](#licencia)
 
 *[Conclusión](#conclusión)
+
+
