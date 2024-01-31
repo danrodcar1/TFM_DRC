@@ -14,6 +14,8 @@ Class designed in C++ to provide automatic connection to multiple ESP32 devices 
 
 ## 📁 Project organization
 
+![image](https://github.com/danrodcar1/espnow_gateway/assets/74423864/9b7e1402-d16f-4c72-93c5-15fa826d3c3e)
+
 ## ✔️ Technologies used in the project
 
 * [VSCode](https://code.visualstudio.com/) - Programming framework used
