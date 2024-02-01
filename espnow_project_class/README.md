@@ -10,6 +10,30 @@ The functions that were in charge, for example, of the ESP-NOW connection to the
 - The "ADConeshot.h" library models the behavior of the analog-to-digital converter. It allows to be configured, to select the channel and several parameters depending on the needs that are required. 
 This modeling in classes allows, in short, to modularize and to realize a simpler code, whose functionality is reduced exclusively to what is intended to be realized. The functional code is hidden from the user, so that the user only has to configure the different functional parameters required.
 
+For better code performance, the device configuration file must be properly configured. First, the debugging levels of the code must be decreased, as well as making sure that the debugging level is the minimum (1). 
+```
+# Log output
+#
+# CONFIG_LOG_DEFAULT_LEVEL_NONE is not set
+CONFIG_LOG_DEFAULT_LEVEL_ERROR=y
+# CONFIG_LOG_DEFAULT_LEVEL_WARN is not set
+# CONFIG_LOG_DEFAULT_LEVEL_INFO is not set
+# CONFIG_LOG_DEFAULT_LEVEL_DEBUG is not set
+# CONFIG_LOG_DEFAULT_LEVEL_VERBOSE is not set
+CONFIG_LOG_DEFAULT_LEVEL=1
+CONFIG_LOG_MAXIMUM_EQUALS_DEFAULT=y
+# CONFIG_LOG_MAXIMUM_LEVEL_DEBUG is not set
+# CONFIG_LOG_MAXIMUM_LEVEL_VERBOSE is not set
+CONFIG_LOG_MAXIMUM_LEVEL=1
+CONFIG_LOG_COLORS=y
+CONFIG_LOG_TIMESTAMP_SOURCE_RTOS=y
+# CONFIG_LOG_TIMESTAMP_SOURCE_SYSTEM is not set
+# end of Log output
+```
+Another option that will improve performance is the one that manages the time in FreeRTOS, i.e. the number of ticks/ms. It must be set to 1000, since it may be originally set to 100.
+```
+CONFIG_FREERTOS_HZ=1000
+```
 
 *Code in this repository is in the Public Domain (or CC0 licensed, at your option.)
 Unless required by applicable law or agreed to in writing, this
