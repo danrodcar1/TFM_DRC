@@ -80,6 +80,7 @@ void pan_process_msg(struct_espnow_rcv_msg *my_msg)
 			cJSON *raw_data = cJSON_GetObjectItem(data, "adc_voltage");
 			strData->peer_data[0][0] = filt_data->valueint;
 			strData->peer_data[0][1] = raw_data->valueint;
+			strData->aggr_data[0] = (strData->own_data[0][1] + strData->peer_data[0][1]) / 2;
 			data_count++;
 			if (data_count == ESP_NOW_MAX_MSR - 1)
 				data_count = 0;
@@ -92,6 +93,15 @@ void pan_process_msg(struct_espnow_rcv_msg *my_msg)
 			break;
 		}
 	}
+	// cJSON *opr_msg;
+	// opr_msg = cJSON_CreateObject();
+
+	// cJSON_AddNumberToObject(opr_msg, "aggr_data", strData->aggr_data[0]);
+	ESP_LOGI(TAG, "own_data_raw:%lu", strData->own_data[0][1]);
+	ESP_LOGI(TAG, "peer_data_raw:%lu", strData->peer_data[0][1]);
+	ESP_LOGI(TAG, "aggregated_data_raw:%lu", strData->aggr_data[0]);
+	// char *my_json_string = cJSON_PrintUnformatted(opr_msg);
+	// clienteAP.espnow_send_check(my_json_string, false, DATA); // no hará deepsleep despues del envio
 	cJSON_Delete(json);
 }
 
@@ -149,7 +159,6 @@ void app_main(void)
 	}
 
 	struct_adclist *my_reads = ADConeshot.set_adc_channel(adc_channel, lengthADC1_CHAN);
-
 	clienteAP.esp_set_https_update(FIRMWARE_UPGRADE_URL, ESP_WIFI_SSID, ESP_WIFI_PASS);
 	clienteAP.set_timeOut(strConfig.timeout, true); // tiempo máximo
 	clienteAP.set_deepSleep(strConfig.tsleep);		// tiempo dormido en segundos
@@ -184,11 +193,13 @@ void app_main(void)
 
 			strData->own_data[0][0] = ADConeshot.get_adc_filtered_read(my_reads, i);
 			strData->own_data[0][1] = ADConeshot.get_adc_voltage_read(my_reads, i);
-			strData->aggr_data[0] = (strData->own_data[0][1] + strData->peer_data[0][1]) / 2;
 			ESP_LOGI(TAG, "own_data_raw:%lu", strData->own_data[0][1]);
 			ESP_LOGI(TAG, "peer_data_raw:%lu", strData->peer_data[0][1]);
 			ESP_LOGI(TAG, "aggregated_data_raw:%lu", strData->aggr_data[0]);
-			cJSON_AddNumberToObject(fmt, "aggr_data", strData->aggr_data[0]);
+			if (strData->aggr_data[0] <= 4095)
+			{
+				cJSON_AddNumberToObject(fmt, "aggr_data", strData->aggr_data[0]);
+			}
 		}
 
 		char *my_json_string = cJSON_PrintUnformatted(root);
