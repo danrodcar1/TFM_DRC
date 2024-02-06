@@ -537,7 +537,7 @@ public:
 	//-----------------------------------------------------------
 	void set_debug(bool _debug = true) { debug = _debug; }
 	//-----------------------------------------------------------
-	void set_deepSleep(bool _deep_sleep = true, int _wakeup_time_sec = 10)
+	void set_deepSleep(bool _deep_sleep = true, int _wakeup_time_sec = 300)
 	{
 		deep_sleep = _deep_sleep;
 		wakeup_time_sec = _wakeup_time_sec;
@@ -1108,7 +1108,7 @@ public:
 		if (debug)
 			ESP_LOGI(TAG7, "Apaga y vamonos");
 		// enter deep sleep
-		// esp_deep_sleep_start();
+		//esp_deep_sleep_start();
 	}
 	//---------------------------------------------------------
 	esp_err_t setup(void);

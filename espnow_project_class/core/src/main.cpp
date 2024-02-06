@@ -34,6 +34,7 @@ typedef struct
 } struct_config;
 struct_config strConfig;
 
+/*
 struct struct_data
 {
 	// Establecer un número máximo de lecturas para almacenar
@@ -43,6 +44,10 @@ struct struct_data
 };
 
 RTC_DATA_ATTR struct_data *strData;
+*/
+RTC_DATA_ATTR uint32_t own_data = 0; // Datos propios
+RTC_DATA_ATTR uint32_t peer_data = 0; // Datos peer
+RTC_DATA_ATTR uint32_t aggr_data = 0; // Datos media
 RTC_DATA_ATTR int data_count = 0;
 
 // https://github.com/DaveGamble/cJSON#building
@@ -78,9 +83,9 @@ void pan_process_msg(struct_espnow_rcv_msg *my_msg)
 		{
 			cJSON *filt_data = cJSON_GetObjectItem(data, "adc_filtered");
 			cJSON *raw_data = cJSON_GetObjectItem(data, "adc_voltage");
-			strData->peer_data[0][0] = filt_data->valueint;
-			strData->peer_data[0][1] = raw_data->valueint;
-			strData->aggr_data[0] = (strData->own_data[0][1] + strData->peer_data[0][1]) / 2;
+			//strData->peer_data[0][0] = filt_data->valueint;
+			peer_data = raw_data->valueint;
+			aggr_data = (own_data + peer_data) / 2;
 			data_count++;
 			if (data_count == ESP_NOW_MAX_MSR - 1)
 				data_count = 0;
@@ -97,9 +102,10 @@ void pan_process_msg(struct_espnow_rcv_msg *my_msg)
 	// opr_msg = cJSON_CreateObject();
 
 	// cJSON_AddNumberToObject(opr_msg, "aggr_data", strData->aggr_data[0]);
-	ESP_LOGI(TAG, "own_data_raw:%lu", strData->own_data[0][1]);
-	ESP_LOGI(TAG, "peer_data_raw:%lu", strData->peer_data[0][1]);
-	ESP_LOGI(TAG, "aggregated_data_raw:%lu", strData->aggr_data[0]);
+	ESP_LOGI(TAG, "own_data_raw:%lu", own_data);
+	ESP_LOGI(TAG, "peer_data_raw:%lu", peer_data);
+	ESP_LOGI(TAG, "aggregated_data_raw:%lu", aggr_data);
+	ESP_LOGI(TAG, "data_count:%d", data_count);
 	// char *my_json_string = cJSON_PrintUnformatted(opr_msg);
 	// clienteAP.espnow_send_check(my_json_string, false, DATA); // no hará deepsleep despues del envio
 	cJSON_Delete(json);
@@ -150,12 +156,12 @@ void mqtt_process_msg(struct_espnow_rcv_msg *my_msg)
 void app_main(void)
 {
 	unsigned long start_time = esp_timer_get_time();
-	strData = (struct_data *)malloc(ESP_NOW_MAX_TOTAL_PEER_NUM * sizeof(struct_data));
+	//strData = (struct_data *)malloc(ESP_NOW_MAX_TOTAL_PEER_NUM * sizeof(struct_data));
 	clienteAP.init_config_size(sizeof(strConfig));
 	if (!clienteAP.get_config((uint16_t *)&strConfig))
 	{
 		strConfig.timeout = 3000;
-		strConfig.tsleep = 10;
+		strConfig.tsleep = 300;
 	}
 
 	struct_adclist *my_reads = ADConeshot.set_adc_channel(adc_channel, lengthADC1_CHAN);
@@ -191,14 +197,15 @@ void app_main(void)
 			cJSON_AddNumberToObject(fmt, "adc_filtered", ADConeshot.get_adc_filtered_read(my_reads, i));
 			cJSON_AddNumberToObject(fmt, "adc_voltage", ADConeshot.get_adc_voltage_read(my_reads, i));
 
-			strData->own_data[0][0] = ADConeshot.get_adc_filtered_read(my_reads, i);
-			strData->own_data[0][1] = ADConeshot.get_adc_voltage_read(my_reads, i);
-			ESP_LOGI(TAG, "own_data_raw:%lu", strData->own_data[0][1]);
-			ESP_LOGI(TAG, "peer_data_raw:%lu", strData->peer_data[0][1]);
-			ESP_LOGI(TAG, "aggregated_data_raw:%lu", strData->aggr_data[0]);
-			if (strData->aggr_data[0] <= 4095)
+			//own_data = ADConeshot.get_adc_filtered_read(my_reads, i);
+			own_data = ADConeshot.get_adc_voltage_read(my_reads, i);
+			ESP_LOGI(TAG, "own_data_raw:%lu", own_data);
+			ESP_LOGI(TAG, "peer_data_raw:%lu", peer_data);
+			ESP_LOGI(TAG, "aggregated_data_raw:%lu", aggr_data);
+			cJSON_AddNumberToObject(fmt, "data_count", data_count);
+			if (aggr_data < 4095 && aggr_data > 0)
 			{
-				cJSON_AddNumberToObject(fmt, "aggr_data", strData->aggr_data[0]);
+				cJSON_AddNumberToObject(fmt, "aggr_data", aggr_data);
 			}
 		}
 
