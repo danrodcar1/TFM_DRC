@@ -14,7 +14,7 @@
 //------- ESP32 HEADERS .- WIFI & ESPNOW ----------//
 #include "esp_system.h"
 #include "esp_event.h"
-// #include "esp_netif.h"
+#include "esp_netif.h"
 #include "lwip/err.h"
 #include "lwip/sys.h"
 #include "esp_netif.h"
@@ -85,11 +85,8 @@ static const char *TAG2 = "* adc_reads";
 static const char *TAG3 = "* task conexion";
 static const char *TAG4 = "* funcion envio";
 static const char *TAG5 = "* init espnow";
-static const char *TAG6 = "* callbacks espnow";
 static const char *TAG7 = "* deep sleep";
 static const char *TAG8 = "* funcion recivo";
-static const char *TAG9 = "* advanced https ota";
-static const char *TAG10 = "* wifi station";
 static const char *TAG11 = "* nvs init";
 
 #define pdSECOND pdMS_TO_TICKS(1000)
@@ -231,7 +228,7 @@ public:
 		 * and hence timings for overall OTA operation.
 		 */
 		esp_wifi_set_ps(WIFI_PS_NONE);
-		//xTaskCreate(&startUpdtTaskimp, "advanced_ota_task", 1024 * 8, NULL, 5, NULL);
+		// xTaskCreate(&startUpdtTaskimp, "advanced_ota_task", 1024 * 8, NULL, 5, NULL);
 		advance_ota_task();
 	}
 
@@ -537,7 +534,7 @@ public:
 	//-----------------------------------------------------------
 	void set_debug(bool _debug = true) { debug = _debug; }
 	//-----------------------------------------------------------
-	void set_deepSleep(bool _deep_sleep = true, int _wakeup_time_sec = 300)
+	void set_deepSleep(bool _deep_sleep = true, int _wakeup_time_sec = 30)
 	{
 		deep_sleep = _deep_sleep;
 		wakeup_time_sec = _wakeup_time_sec;
@@ -877,8 +874,6 @@ public:
 		uint8_t *mac_addr = recv_info->src_addr;
 		uint8_t type = data[0];
 		uint8_t i;
-		uint8_t macB[6];
-		uint32_t old;
 		struct_pairing *punt = (struct_pairing *)data;
 		struct_espnow_rcv_msg *my_msg = (struct_espnow_rcv_msg *)malloc(sizeof(struct_espnow_rcv_msg));
 
@@ -1108,7 +1103,7 @@ public:
 		if (debug)
 			ESP_LOGI(TAG7, "Apaga y vamonos");
 		// enter deep sleep
-		//esp_deep_sleep_start();
+		// esp_deep_sleep_start();
 	}
 	//---------------------------------------------------------
 	esp_err_t setup(void);
