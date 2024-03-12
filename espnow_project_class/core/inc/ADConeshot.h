@@ -1,21 +1,21 @@
 #pragma once
 
 //------- C HEADERS ----------//
-#include "stdint.h"
-#include <string>
-#include "esp_log.h"
+// #include "stdint.h"
+// #include <string>
+// #include "esp_log.h"
 //------- ESP32 HEADERS .- ONESHOT ADC ----------//
 #include "soc/soc_caps.h"
 #include "esp_adc/adc_oneshot.h"
 #include "esp_adc/adc_cali.h"
 #include "esp_adc/adc_cali_scheme.h"
 //------- ESP32 HEADERS .- FREERTOS ----------//
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
+// #include "freertos/FreeRTOS.h"
+// #include "freertos/task.h"
 //------- ESP32 HEADERS .- GPIO ----------//
 #include "driver/gpio.h"
-#include "esp_timer.h"
-#include "esp_system.h"
+// #include "esp_timer.h"
+// #include "esp_system.h"
 
 using namespace std;
 
@@ -62,7 +62,7 @@ typedef struct
 
 float EMA_ALPHA = 0.6;
 
-unsigned long convertion_time = 200;
+unsigned long convertion_time = 120; //antes 200
 // ADC1 Channels
 TaskHandle_t adcTaskHandle = NULL;
 adc_oneshot_unit_handle_t adc1_handle;
@@ -82,24 +82,28 @@ public:
 		this_object = this;
 	}
 
-	/* esp_err_t set_adc_channel(int *ptr, int size)
+	struct_adclist *set_adc_channel(adc_channel_t *ptr, int lengthADC1_CHAN)
 	{
-		_adc_channel = (int *)malloc(size * sizeof(*_adc_channel));
+		_adc_channel = (int *)malloc(lengthADC1_CHAN * sizeof(*_adc_channel));
 		if (ptr == NULL)
 			ESP_LOGW(TAG, "Memory not allocated");
 		else
 		{
 			ESP_LOGI(TAG, "Memory successfully allocated using malloc");
-			for (int i = 0; i < size; i++)
+			for (int i = 0; i < lengthADC1_CHAN; i++)
 				_adc_channel[i] = ptr[i];
 			//		free(_adc_channel);
 		}
-		struct_adclist *my_reads = (struct_adclist*)malloc(_lengthADC1_CHAN * sizeof(struct_adclist));
-		my_reads->num = _lengthADC1_CHAN;
-		ESP_LOGI(TAG, "ADC Length = %d", _lengthADC1_CHAN);
-		my_reads->adc_read = (struct_adcread *)malloc(my_reads->num * sizeof(struct_adcread));
-		for (int i = 0; i < my_reads->num; i++)
+
+		struct_adclist *my_reads = (struct_adclist *)malloc(lengthADC1_CHAN * sizeof(struct_adclist));
+		my_reads->length = lengthADC1_CHAN;
+		ESP_LOGI(TAG, "ADC Length = %d", lengthADC1_CHAN);
+		my_reads->adc_read = (struct_adcread *)malloc(my_reads->length * sizeof(struct_adcread));
+		my_reads->chn = (int *)malloc(lengthADC1_CHAN);
+		for (int i = 0; i < my_reads->length; i++)
 		{
+			my_reads->chn[i] = _adc_channel[i];
+			ESP_LOGI("Channel config", "Channel %i configured as an ADC input", my_reads->chn[i]);
 			my_reads->adc_read[i].AN_i = 0;
 			my_reads->adc_read[i].adc_raw = 0;
 			my_reads->adc_read[i].voltage = 0;
@@ -108,8 +112,9 @@ public:
 			for (int j = 0; j < FILTER_LEN; j++)
 				my_reads->adc_read[i].adc_buff[j] = 0;
 		}
-		return ESP_OK;
-	} */
+
+		return my_reads;
+	}
 	/*---------------------------------------------------------------
 			ADC Calibration
 	---------------------------------------------------------------*/
@@ -121,7 +126,7 @@ public:
 
 		if (!calibrated)
 		{
-			ESP_LOGI(TAG, "calibration scheme version is %s", "Curve Fitting");
+			ESP_LOGI(TAG, "calibration scheme version is %s", "curve Fitting");
 			adc_cali_curve_fitting_config_t cali_config = {
 				.unit_id = unit,
 				.atten = atten,
@@ -151,7 +156,7 @@ public:
 
 	static void adc_calibration_deinit(adc_cali_handle_t handle)
 	{
-		ESP_LOGI(TAG, "deregister %s calibration scheme", "Curve Fitting");
+		ESP_LOGI(TAG, "deregister %s calibration scheme", "curve Fitting");
 		ESP_ERROR_CHECK(adc_cali_delete_scheme_curve_fitting(handle));
 	}
 

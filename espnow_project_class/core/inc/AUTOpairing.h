@@ -14,7 +14,7 @@
 //------- ESP32 HEADERS .- WIFI & ESPNOW ----------//
 #include "esp_system.h"
 #include "esp_event.h"
-// #include "esp_netif.h"
+#include "esp_netif.h"
 #include "lwip/err.h"
 #include "lwip/sys.h"
 #include "esp_netif.h"
@@ -71,22 +71,22 @@ static int s_retry_num = 0;
 static QueueHandle_t cola_resultado_enviados;
 static SemaphoreHandle_t semaforo_envio;
 static SemaphoreHandle_t semaforo_listo;
+static SemaphoreHandle_t semaforo_update = NULL;
 TaskHandle_t conexion_hand = NULL;
 
 static uint8_t s_example_broadcast_mac[ESP_NOW_ETH_ALEN] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 
-uint8_t mac_address[6] = {0x00, 0x11, 0x22, 0x33, 0x44, 0x55};
+// uint8_t mac_address[6] = {0x00, 0x11, 0x22, 0x33, 0x44, 0x55};
+
+uint8_t mac_personal[6] = {0};
 
 static const char *TAG = "* mainApp";
 static const char *TAG2 = "* adc_reads";
 static const char *TAG3 = "* task conexion";
 static const char *TAG4 = "* funcion envio";
 static const char *TAG5 = "* init espnow";
-static const char *TAG6 = "* callbacks espnow";
 static const char *TAG7 = "* deep sleep";
 static const char *TAG8 = "* funcion recivo";
-static const char *TAG9 = "* advanced https ota";
-static const char *TAG10 = "* wifi station";
 static const char *TAG11 = "* nvs init";
 
 #define pdSECOND pdMS_TO_TICKS(1000)
@@ -94,6 +94,13 @@ static const char *TAG11 = "* nvs init";
 #ifndef MAX_CONFIG_SIZE
 #define MAX_CONFIG_SIZE 64
 #endif
+
+#define ESP_NOW_MAX_MSR 15
+
+/********************/
+
+/********************/
+// extern struct_data *strData;
 
 typedef struct
 {
@@ -128,10 +135,12 @@ class AUTOpairing_t
 	bool mensaje_enviado; // check
 	bool terminar;
 	unsigned long start_time;
+	unsigned long currentMillis;
 	unsigned long previousMillis_scanChannel; // will store last time channel was scanned
 	bool esperando;
 	bool esperando_pan;
 	bool rtc_init;
+	bool deep_sleep;
 
 	void (*user_callback_mqtt)(struct_espnow_rcv_msg *);
 	void (*user_callback_pan)(struct_espnow_rcv_msg *);
@@ -142,10 +151,11 @@ class AUTOpairing_t
 	bool nvs_start;
 	uint8_t espnow_channel;
 	int wakeup_time_sec;
-	int panAddress;
+	uint16_t panAddress;
 	const char *fw_upgrade_url;
 	const char *wifi_ssid;
 	const char *wifi_pass;
+	bool esp_event_already_run;
 
 public:
 	AUTOpairing_t()
@@ -157,6 +167,7 @@ public:
 		esperando = false;
 		esperando_pan = false;
 		timeOutEnabled = true;
+		deep_sleep = true;
 		nvs_start = false;
 		rtc_init = false;
 		wakeup_time_sec = 10; // tiempo dormido en segundos
@@ -171,6 +182,7 @@ public:
 		fw_upgrade_url = NULL;
 		wifi_ssid = NULL;
 		wifi_pass = NULL;
+		esp_event_already_run = false;
 	}
 
 	void esp_set_https_update(const string &url, const string &ssid, const string &pass)
@@ -216,6 +228,7 @@ public:
 		 * and hence timings for overall OTA operation.
 		 */
 		esp_wifi_set_ps(WIFI_PS_NONE);
+		// xTaskCreate(&startUpdtTaskimp, "advanced_ota_task", 1024 * 8, NULL, 5, NULL);
 		advance_ota_task();
 	}
 
@@ -292,8 +305,12 @@ public:
 		s_wifi_event_group = xEventGroupCreate();
 
 		ESP_ERROR_CHECK(esp_netif_init());
+		if (!esp_event_already_run)
+		{
+			ESP_LOGI("* advanced https ota", "Creating ESP event loop");
+			ESP_ERROR_CHECK(esp_event_loop_create_default());
+		}
 
-		ESP_ERROR_CHECK(esp_event_loop_create_default());
 		// ESP_HTTPS_OTA_EVENT
 		ESP_ERROR_CHECK(esp_event_handler_register(ESP_HTTPS_OTA_EVENT, ESP_EVENT_ANY_ID, &AUTOpairing_t::ota_event_handler, NULL));
 		esp_netif_create_default_wifi_sta();
@@ -321,11 +338,13 @@ public:
 
 		/* Waiting until either the connection is established (WIFI_CONNECTED_BIT) or connection failed for the maximum
 		 * number of re-tries (WIFI_FAIL_BIT). The bits are set by wifi_event_handler() (see above) */
+
 		EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group,
 											   WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
 											   pdFALSE,
 											   pdFALSE,
 											   portMAX_DELAY);
+
 		ESP_LOGI("* advanced https ota", "before eventBits");
 		/* xEventGroupWaitBits() returns the bits before the call returned, hence we can test which event actually
 		 * happened. */
@@ -407,6 +426,7 @@ public:
 		if (err != ESP_OK)
 		{
 			ESP_LOGE("* advanced https ota", "ESP HTTPS OTA Begin failed");
+			// vTaskDelete(NULL);
 			esp_restart();
 		}
 
@@ -464,12 +484,40 @@ public:
 		}
 
 	ota_end:
+		xSemaphoreGive(semaforo_update);
 		esp_https_ota_abort(https_ota_handle);
 		ESP_LOGE("* advanced https ota", "ESP_HTTPS_OTA upgrade failed");
+		// vTaskDelete(NULL);
 		esp_restart();
 	}
+
 	//-----------------------------------------------------------
-	void set_pan(uint8_t _pan = 1) { panAddress = _pan; }
+	void print_mac(const uint8_t *mac_addr)
+	{
+		ESP_LOGI("* Print MAC", "%02X:%02X:%02X:%02X:%02X:%02X", mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
+	}
+	//-----------------------------------------------------------
+	void set_pan(uint16_t _pan = 1)
+	{
+		panAddress = _pan;
+		/* PRUEBA MAC PERSONALIZABLE */
+		// Ver esta web: https://www.reddit.com/r/embedded/comments/13ayil0/is_there_a_way_to_store_uint16_t_data_onto_a/
+		// Ver esta web: https://stackoverflow.com/questions/31320242/deletion-using-memcpy-in-an-array
+		uint8_t pan_uni[2] = {0};
+		uint8_t mac_base[6] = {0};
+		uint8_t mac_uni_base[6] = {0};
+		pan_uni[1] = panAddress & 0xFF;			 // LSB
+		pan_uni[0] = (panAddress & 0xFF00) >> 8; // MSB
+		print_mac(pan_uni);
+		esp_efuse_mac_get_default(mac_base);
+		esp_read_mac(mac_base, ESP_MAC_WIFI_STA);
+		esp_derive_local_mac(mac_personal, mac_uni_base);
+		print_mac(mac_base);
+		memmove(&mac_personal[3], &mac_base[3], 3 * sizeof(mac_base[0]));
+		memmove(&mac_personal[1], &pan_uni[0], 2 * sizeof(pan_uni[0]));
+		print_mac(mac_personal);
+		/* FIN PRUEBA MAC PERSONALIZABLE*/
+	}
 	//-----------------------------------------------------------
 	int get_pan() { return panAddress; }
 	//-----------------------------------------------------------
@@ -486,7 +534,11 @@ public:
 	//-----------------------------------------------------------
 	void set_debug(bool _debug = true) { debug = _debug; }
 	//-----------------------------------------------------------
-	void set_deepSleep(int _wakeup_time_sec = 10) { wakeup_time_sec = _wakeup_time_sec; }
+	void set_deepSleep(bool _deep_sleep = true, int _wakeup_time_sec = 30)
+	{
+		deep_sleep = _deep_sleep;
+		wakeup_time_sec = _wakeup_time_sec;
+	}
 	//-----------------------------------------------------------
 	bool init_config_size(uint8_t size)
 	{
@@ -623,7 +675,7 @@ public:
 		cfg.ampdu_rx_enable = WIFI_AMPDU_RX_ENABLED;
 		cfg.ampdu_tx_enable = WIFI_AMPDU_TX_ENABLED;
 		cfg.amsdu_tx_enable = WIFI_AMSDU_TX_ENABLED;
-		cfg.nvs_enable = WIFI_NVS_ENABLED;
+		cfg.nvs_enable = 0;
 		cfg.nano_enable = WIFI_NANO_FORMAT_ENABLED;
 		cfg.rx_ba_win = WIFI_DEFAULT_RX_BA_WIN;
 		cfg.wifi_task_core_id = WIFI_TASK_CORE_ID;
@@ -641,6 +693,7 @@ public:
 	{
 		ESP_ERROR_CHECK(esp_netif_init());
 		ESP_ERROR_CHECK(esp_event_loop_create_default());
+		esp_event_already_run = true;
 		wifi_init_config_t cfg = esp_wifi_init_config_default();
 		ESP_ERROR_CHECK(esp_wifi_init(&cfg));
 		ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
@@ -654,66 +707,80 @@ public:
 	//----------------------------------------------------
 	void begin(void)
 	{
-
 		if (debug)
 			ESP_LOGI(TAG, "Comienza AUTOpairing...");
+
 		previousMillis_scanChannel = 0;
-		start_time = esp_timer_get_time() / 1000;
+		start_time = esp_timer_get_time();
 		semaforo_envio = xSemaphoreCreateBinary();
 		semaforo_listo = xSemaphoreCreateBinary();
 		cola_resultado_enviados = xQueueCreate(ESPNOW_QUEUE_SIZE, sizeof(espnow_send_cb_t));
 
 		xSemaphoreGive(semaforo_listo);
 
-	ESP_ERROR_CHECK(esp_sleep_enable_timer_wakeup(wakeup_time_sec * 1000000));
+		ESP_ERROR_CHECK(esp_sleep_enable_timer_wakeup(wakeup_time_sec * 1000000));
 
-	struct timeval now;
-	gettimeofday(&now, NULL);
-	int sleep_time_ms = (now.tv_sec - rtcData.sleep_enter_time.tv_sec) * 1000 + (now.tv_usec - rtcData.sleep_enter_time.tv_usec) / 1000;
+		struct timeval now;
+		gettimeofday(&now, NULL);
+		int sleep_time_ms = (now.tv_sec - rtcData.sleep_enter_time.tv_sec) * 1000 + (now.tv_usec - rtcData.sleep_enter_time.tv_usec) / 1000;
 
-	if(debug) ESP_LOGI(TAG, "Wake up from timer. Time spent in deep sleep: %dms\n", sleep_time_ms);
+		if (debug)
+			ESP_LOGI(TAG, "Wake up from timer. Time spent in deep sleep: %dms\n", sleep_time_ms);
 		if (nvsData.code1 == MAGIC_CODE1)
 		{
 			// recover information saved in NVS memory
 			memcpy(&pairingData, &(nvsData.data), sizeof(pairingData));
-			// set WiFi channel
-			wifi_init_config_t cfg = esp_wifi_init_config_default();
-			ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-			if (debug)
-				ESP_LOGI(TAG5, "Wifi initialized without problems...\n");
-			ESP_ERROR_CHECK(esp_wifi_start());
-			if (debug)
-				ESP_LOGI(TAG5, "Wifi started without problems...\n");
-			ESP_ERROR_CHECK(esp_wifi_set_mode(ESPNOW_WIFI_MODE));
-			if (debug)
-				ESP_LOGI(TAG5, "Wifi set mode STA\n");
-			ESP_ERROR_CHECK(esp_wifi_set_promiscuous(true));
-			ESP_ERROR_CHECK(esp_wifi_set_channel(pairingData.channel, WIFI_SECOND_CHAN_NONE));
-			if (debug)
-				ESP_LOGI(TAG5, "Wifi setting channel  = %d\n", pairingData.channel);
-			ESP_ERROR_CHECK(esp_wifi_set_promiscuous(false));
-			if (debug)
-				ESP_LOGI(TAG5, "Wifi setting promiscuous = false\n");
-			ESP_ERROR_CHECK(esp_wifi_disconnect());
-			if (debug)
-				ESP_LOGI(TAG5, "Wifi  disconnected\n");
-			ESP_ERROR_CHECK(esp_now_init());
-			if (debug)
-				ESP_LOGI(TAG5, "Wifi esp_now initialized\n");
-
-			ESP_ERROR_CHECK(esp_now_register_send_cb(espnow_send_cb));
-			ESP_ERROR_CHECK(esp_now_register_recv_cb(espnow_recv_cb));
-
-#if CONFIG_ESP_WIFI_STA_DISCONNECTED_PM_ENABLE
-			ESP_ERROR_CHECK(esp_now_set_wake_window(65535));
-#endif
-
 			if (debug)
 				ESP_LOGI(TAG, "Emparejamiento recuperado de la memoria NVS del usuario ");
 			if (debug)
-				ESP_LOGI(TAG, "%02X:%02X:%02X:%02X:%02X:%02X", pairingData.macAddr[5], pairingData.macAddr[4], pairingData.macAddr[3], pairingData.macAddr[2], pairingData.macAddr[1], pairingData.macAddr[0]);
+				print_mac(pairingData.macAddr);
 			if (debug)
 				ESP_LOGI(TAG, "en el canal %d en %f ms", pairingData.channel, (float)(esp_timer_get_time() - start_time) / 1000);
+
+			unsigned long t0 = esp_timer_get_time();
+			// set WiFi channel
+			ESP_ERROR_CHECK(esp_netif_init());
+			ESP_ERROR_CHECK(esp_event_loop_create_default());
+			esp_event_already_run = true;
+			wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+			cfg.nvs_enable = 0;
+			// wifi_init_config_t cfg = esp_wifi_init_config_default();
+			// ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+			esp_wifi_init(&cfg);
+			// if (debug)
+			// ESP_LOGI(TAG5, "Wifi initialized without problems...\n");
+
+			// if (debug)
+			// ESP_LOGI(TAG5, "Wifi started without problems...\n");
+			ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
+			ESP_ERROR_CHECK(esp_wifi_set_mode(ESPNOW_WIFI_MODE));
+			// if (debug)
+			// ESP_LOGI(TAG5, "Wifi set mode STA\n");
+			// ESP_ERROR_CHECK(esp_wifi_set_promiscuous(true));
+			// if (debug)
+			// ESP_LOGI(TAG5, "Wifi setting channel  = %d\n", pairingData.channel);
+			// ESP_ERROR_CHECK(esp_wifi_set_promiscuous(false));
+
+			ESP_ERROR_CHECK(esp_wifi_set_mac(WIFI_IF_STA, &mac_personal[0]));
+			ESP_ERROR_CHECK(esp_wifi_start());
+
+			ESP_ERROR_CHECK(esp_wifi_set_channel(pairingData.channel, WIFI_SECOND_CHAN_NONE));
+			// if (debug)
+			// ESP_LOGI(TAG5, "Wifi setting promiscuous = false\n");
+			// ESP_ERROR_CHECK(esp_wifi_disconnect());
+			// if (debug)
+			// ESP_LOGI(TAG5, "Wifi  disconnected\n");
+			ESP_ERROR_CHECK(esp_now_init());
+			// if (debug)
+			// ESP_LOGI(TAG5, "Wifi esp_now initialized\n");
+
+			ESP_ERROR_CHECK(esp_now_register_send_cb(espnow_send_cb));
+			ESP_ERROR_CHECK(esp_now_register_recv_cb(espnow_recv_cb));
+			/*
+			#if CONFIG_ESP_WIFI_STA_DISCONNECTED_PM_ENABLE
+						ESP_ERROR_CHECK(esp_now_set_wake_window(65535));
+			#endif
+			*/
 
 			esp_now_peer_info_t peer;
 			peer.channel = pairingData.channel;
@@ -724,10 +791,11 @@ public:
 			if (debug)
 				ESP_LOGI(TAG8, "ADD PASARELA PEER");
 			pairingStatus = PAIR_PAIRED;
+			ESP_LOGI("*measuringTime", "Conexion time: %f ms", (float)(esp_timer_get_time() - t0) / 1000);
 			if (debug)
 				ESP_LOGI(TAG8, "LIBERADO SEMAFORO ENVIO: EMPAREJAMIENTO");
 			xSemaphoreGive(semaforo_envio);
-			vTaskDelay(40);
+			// vTaskDelay(10 / portTICK_PERIOD_MS);
 		}
 		else
 		{
@@ -758,7 +826,7 @@ public:
 		if (debug)
 			ESP_LOGI(TAG4, "ENVIO ESPNOW status: %s", (status) ? "ERROR" : "OK");
 		if (debug)
-			ESP_LOGI(TAG4, "MAC: %02X:%02X:%02X:%02X:%02X:%02X", mac_addr[5], mac_addr[4], mac_addr[3], mac_addr[2], mac_addr[1], mac_addr[0]);
+			print_mac(mac_addr);
 		if (status == 0)
 		{
 			if (debug)
@@ -806,8 +874,6 @@ public:
 		uint8_t *mac_addr = recv_info->src_addr;
 		uint8_t type = data[0];
 		uint8_t i;
-		uint8_t macB[6];
-		uint32_t old;
 		struct_pairing *punt = (struct_pairing *)data;
 		struct_espnow_rcv_msg *my_msg = (struct_espnow_rcv_msg *)malloc(sizeof(struct_espnow_rcv_msg));
 
@@ -840,7 +906,8 @@ public:
 				ESP_LOGI(TAG8, "LIBERADO SEMAFORO ENVIO: NODATA");
 			xSemaphoreGive(semaforo_envio);
 
-			if (terminar && !esperando && !esperando_pan) gotoSleep();
+			if (terminar && !esperando && !esperando_pan)
+				gotoSleep();
 
 			break;
 		case PAN_DATA:
@@ -851,7 +918,7 @@ public:
 			Utilizar colas.
 			*/
 			my_msg->payload = (char *)malloc(len - PAN_payload_offset + 1);
-			snprintf(my_msg->payload, len - PAN_payload_offset, "%s", (char *)data + PAN_payload_offset);
+			snprintf(my_msg->payload, len + PAN_payload_offset, "%s", (char *)data + PAN_payload_offset);
 			memcpy(my_msg->macAddr, data + PAN_MAC_offset, PAN_MAC_size);
 			memcpy((void *)&my_msg->ms_old, data + PAN_MSold_offset, PAN_MSold_size);
 			if (debug)
@@ -879,12 +946,13 @@ public:
 			if (debug)
 				ESP_LOGI(TAG8, "canal: %d", punt->channel);
 			if (debug)
-				ESP_LOGI(TAG8, "MAC: %02X:%02X:%02X:%02X:%02X:%02X", punt->macAddr[5], punt->macAddr[4], punt->macAddr[3], punt->macAddr[2], punt->macAddr[1], punt->macAddr[0]);
+				print_mac(punt->macAddr);
+
 			esp_now_peer_info_t peer;
 			peer.channel = punt->channel;
 			peer.ifidx = ESPNOW_WIFI_IF;
 			peer.encrypt = false;
-			
+
 			memcpy(peer.peer_addr, punt->macAddr, ESP_NOW_ETH_ALEN);
 			ESP_ERROR_CHECK(esp_now_add_peer(&peer));
 			memcpy(pairingData.macAddr, punt->macAddr, 6);
@@ -1005,22 +1073,37 @@ public:
 			if (xSemaphoreTake(semaforo_listo, 3000 / portTICK_PERIOD_MS))
 			{
 				ESP_LOGI(TAG, "LIBERANDO SEMAFORO CONEXION");
+				xSemaphoreGive(semaforo_listo);
 				return true;
 			}
 		}
 		// return (pairingStatus == PAIR_PAIRED && mensaje_enviado == false && terminar == false);
 	}
 
+	//-----------------------------------------------------------
+	bool actualizacion_disponible()
+	{
+		while (1)
+		{
+			if (xSemaphoreTake(semaforo_update, 3000 / portTICK_PERIOD_MS))
+			{
+				ESP_LOGI(TAG, "LIBERANDO SEMAFORO UPDATE");
+				return true;
+			}
+		}
+		// return (pairingStatus == PAIR_PAIRED && mensaje_enviado == false && terminar == false);
+	}
 	//--------------------------------------------------------
 	void gotoSleep()
 	{
 		// get deep sleep enter time
 		gettimeofday(&rtcData.sleep_enter_time, NULL);
 		// add some randomness to avoid collisions with multiple devices
+
 		if (debug)
 			ESP_LOGI(TAG7, "Apaga y vamonos");
 		// enter deep sleep
-		esp_deep_sleep_start();
+		// esp_deep_sleep_start();
 	}
 	//---------------------------------------------------------
 	esp_err_t setup(void);
@@ -1029,13 +1112,18 @@ public:
 	void start_connection_task()
 	{
 		wifi_espnow_init();
-		xTaskCreate(&startTaskImpl, "TASK", 4096, this_object, 1, &conexion_hand);
+		xTaskCreate(&startConnTaskimp, "Connection implicit TASK", 4096, this_object, 1, &conexion_hand);
 	}
 
 private:
-	static void startTaskImpl(void *pvParameters)
+	static void startConnTaskimp(void *pvParameters)
 	{
 		reinterpret_cast<AUTOpairing_t *>(pvParameters)->keep_connection_task();
+	}
+
+	static void startUpdtTaskimp(void *pvParameters)
+	{
+		reinterpret_cast<AUTOpairing_t *>(pvParameters)->advance_ota_task();
 	}
 
 	void keep_connection_task()
@@ -1066,6 +1154,7 @@ private:
 				// set WiFi channel
 				uint8_t primary = -1;
 				wifi_second_chan_t secondary;
+				// set WiFi channel
 				wifi_init_config_t cfg = esp_wifi_init_config_default();
 				ESP_ERROR_CHECK(esp_wifi_init(&cfg));
 				if (debug)
@@ -1117,7 +1206,7 @@ private:
 				// set pairing data to send to the server
 				pairingData.msgType = PAIRING; //| ((panAddress << PAN_OFFSET) & MASK_PAN);
 				pairingData.id = ESPNOW_DEVICE;
-
+				previousMillis_scanChannel = esp_timer_get_time() / 1000;
 				// send request
 				esp_now_send(s_example_broadcast_mac, (uint8_t *)&pairingData, sizeof(pairingData));
 				pairingStatus = PAIR_REQUESTED;
@@ -1125,6 +1214,18 @@ private:
 			}
 
 			case PAIR_REQUESTED:
+				/*
+				// time out to allow receiving response from server
+					currentMillis = esp_timer_get_time() / 1000;
+					if ((currentMillis - previousMillis_scanChannel) / 1000 > 100)
+					{
+						previousMillis_scanChannel = currentMillis;
+						espnow_channel++;
+						if (espnow_channel > 11)
+							espnow_channel = 1;
+						pairingStatus = PAIR_REQUEST;
+					}
+				*/
 				// time out to allow receiving response from server
 				vTaskDelay(100 / portTICK_PERIOD_MS);
 				if (pairingStatus == PAIR_REQUESTED)
