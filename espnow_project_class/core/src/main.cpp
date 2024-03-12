@@ -234,6 +234,10 @@ void app_main(void)
 			// 	{4, 2, 2, 5, 9, 8, 3},
 			// 	{10, 5, 4, 2, 6, 8, 9},
 			// 	{6, 4, 10, 3, 1, 2, 8}};
+			// vector<vector<uint16_t>> time_series_set{
+			// 	{3369, 3338, 3102, 2943, 2815, 2683, 2682, 2666, 2729, 2920}, // X
+			// 	{3321, 3181, 3068, 2937, 2824, 2752, 2746, 2728, 2664, 2600}, // Y
+			// 	{3345, 3259, 3085, 2940, 2819, 2717, 2714, 2697, 2696, 2760}}; // med(x,y)
 			// uint8_t window_size = 4;
 			// uint8_t time_series_index_p = 2;
 			// double threshold = 0.4;
@@ -255,11 +259,11 @@ void app_main(void)
 			ESP_LOGI(TAG, "DTW based LISA Start");
 
 			vector<vector<uint16_t>> time_series_set{
-				{4, 2, 2, 5, 9, 8, 3},
-				{10, 5, 4, 2, 6, 8, 9},
-				{6, 4, 10, 3, 1, 2, 8}};
+				{3369, 3338, 3102, 2943, 2815, 2683, 2682, 2666, 2729, 2920, 1000, 500}, // X
+				{3321, 3181, 3068, 2937, 2824, 2752, 2746, 2728, 2664, 2600, 2600, 2700}, // Y
+				{3345, 3259, 3085, 2940, 2819, 2717, 2714, 2697, 2696, 2760, 1800, 1600}}; // med(x,y)
 			uint8_t window_size = 4;
-			uint8_t time_series_index_p = 2;
+			uint8_t time_series_index_p = 1;
 			double threshold = 0.4;
 
 			vector<double> L_v_p_i;
@@ -279,7 +283,6 @@ void app_main(void)
 			// std::cout << "DTW Path: " << std::endl;
 			// for (int i = 0; i < path.size(); ++i)
 			// 	std::cout << "i=" << path[i][0] << " j=" << path[i][1] << std::endl;
-
 
 			// END of -Another little example of DTW LISA
 			for (size_t i = 0; i < personal_data_count; i++)
