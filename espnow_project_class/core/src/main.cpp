@@ -217,47 +217,8 @@ void app_main(void)
 		ESP_LOGI(TAG, "my_json_string\n%s", my_json_string);
 		ESP_LOGI("* Tamaño paquete", "El mensaje ocupa %i bytes", msg_size);
 
-		// INICIO RUTINA DIVISION PAQUETES
-
-		if (msg_size > 249)
-		{
-			// Empieza el proceso de envío. Desactivo el deep sleep
-			int n = 1;
-			for (size_t i = 1; i < msg_size; i++)
-			{
-				if (msg_size % i == 0)
-				{
-					ESP_LOGI("* Divisores paquete", "El mensaje se puede dividir en %i paquetes de %i bytes", n, msg_size / n);
-					n++;
-				}
-				if (n * i < 249)
-					break;
-			}
-			ESP_LOGI("* Divisores paquete", "El mensaje se dividirá en %i paquetes de %i bytes", n, msg_size / n);
-			int parts = msg_size / n;
-			int start = 0;
-			int index_part = n;
-
-			// MIRAR ESTA WEB: https://www.appsloveworld.com/cplus/100/584/how-can-i-split-a-string-into-chunks-of-1024-with-iterator-and-string-view
-			while (start < msg_size)
-			{
-				char filename[parts + 2] = {0}; // Cadena de datos de longitud parts + 1 index_part + 1 caracter fin cadena
-				char substr[parts + 1] = {0};
-				strncpy(substr, my_json_string + start, parts);
-				sprintf(filename, "%d%s", index_part, substr);
-				printf("Filename is: %s\n", filename);
-				start += parts;
-				index_part--;
-				clienteAP.espnow_send_check(filename, false, DATA); // no hará deepsleep despues del envio
-			}
-			clienteAP.gotoSleep();
-		}
-		else
-		{
-			clienteAP.espnow_send_check(my_json_string); // hará deepsleep por defecto
-		}
-		// FIN RUTINA DIVISION PAQUETES
-		// clienteAP.espnow_send_check(my_json_string); // hará deepsleep por defecto
+		
+		clienteAP.espnow_send_check(my_json_string); // hará deepsleep por defecto
 		free(my_reads);
 		cJSON_Delete(root);
 		cJSON_free(my_json_string);

@@ -1,21 +1,21 @@
 #pragma once
 
 //------- C HEADERS ----------//
-#include "stdint.h"
-#include <string>
-#include "esp_log.h"
+// #include "stdint.h"
+// #include <string>
+// #include "esp_log.h"
 //------- ESP32 HEADERS .- ONESHOT ADC ----------//
 #include "soc/soc_caps.h"
 #include "esp_adc/adc_oneshot.h"
 #include "esp_adc/adc_cali.h"
 #include "esp_adc/adc_cali_scheme.h"
 //------- ESP32 HEADERS .- FREERTOS ----------//
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
+// #include "freertos/FreeRTOS.h"
+// #include "freertos/task.h"
 //------- ESP32 HEADERS .- GPIO ----------//
 #include "driver/gpio.h"
-#include "esp_timer.h"
-#include "esp_system.h"
+// #include "esp_timer.h"
+// #include "esp_system.h"
 
 using namespace std;
 
@@ -62,7 +62,7 @@ typedef struct
 
 float EMA_ALPHA = 0.6;
 
-unsigned long convertion_time = 200;
+unsigned long convertion_time = 120; //antes 200
 // ADC1 Channels
 TaskHandle_t adcTaskHandle = NULL;
 adc_oneshot_unit_handle_t adc1_handle;
@@ -82,7 +82,7 @@ public:
 		this_object = this;
 	}
 
-	struct_adclist * set_adc_channel(adc_channel_t *ptr, int lengthADC1_CHAN)
+	struct_adclist *set_adc_channel(adc_channel_t *ptr, int lengthADC1_CHAN)
 	{
 		_adc_channel = (int *)malloc(lengthADC1_CHAN * sizeof(*_adc_channel));
 		if (ptr == NULL)
@@ -113,7 +113,6 @@ public:
 				my_reads->adc_read[i].adc_buff[j] = 0;
 		}
 
-		
 		return my_reads;
 	}
 	/*---------------------------------------------------------------
