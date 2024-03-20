@@ -28,8 +28,8 @@ const char *FIRMWARE_UPGRADE_URL = "https://huertociencias.uma.es/ESP32OTA/espno
 UpdateStatus updateStatus = NO_UPDATE_FOUND;
 
 // int adc_channel[1] = {ADC_CHANNEL_0};
-// static adc_channel_t adc_channel[4] = {ADC_CHANNEL_0, ADC_CHANNEL_1, ADC_CHANNEL_2, ADC_CHANNEL_4};
-static adc_channel_t adc_channel[1] = {ADC_CHANNEL_0};
+static adc_channel_t adc_channel[4] = {ADC_CHANNEL_0, ADC_CHANNEL_1, ADC_CHANNEL_2, ADC_CHANNEL_4};
+// static adc_channel_t adc_channel[1] = {ADC_CHANNEL_0};
 uint8_t lengthADC1_CHAN = sizeof(adc_channel) / sizeof(adc_channel_t);
 
 typedef struct
@@ -145,6 +145,19 @@ void mqtt_process_msg(struct_espnow_rcv_msg *my_msg)
 	{
 		updateStatus = THERE_IS_AN_UPDATE_AVAILABLE;
 		clienteAP.init_update(); // ¿Porque funciona en app_main y aqui no? :(
+
+		// Añadir en main si se quiere funcionalidad
+		
+		// switch (updateStatus)
+		// {
+		// case THERE_IS_AN_UPDATE_AVAILABLE:
+		// 	clienteAP.init_update();
+		// 	break;
+		// case NO_UPDATE_FOUND:
+		// 	// get deep sleep enter time
+		// 	//						gotoSleep();
+		// 	break;
+		// }
 	}
 	free(my_msg->topic);
 	free(my_msg->payload);
@@ -153,7 +166,6 @@ void mqtt_process_msg(struct_espnow_rcv_msg *my_msg)
 
 void app_main(void)
 {
-
 	clienteAP.init_config_size(sizeof(strConfig));
 	if (clienteAP.get_config((uint16_t *)&strConfig) == false)
 	{
@@ -195,100 +207,22 @@ void app_main(void)
 			// cJSON_AddNumberToObject(fmt, "adc_filtered", ADConeshot.get_adc_filtered_read(my_reads, i));
 			cJSON_AddNumberToObject(fmt, "adc_voltage", ADConeshot.get_adc_voltage_read(my_reads, i));
 			cJSON_AddNumberToObject(fmt, "raw_voltage", ADConeshot.get_adc_raw_read(my_reads, i));
-
-			own_raw_data[personal_data_count] = (uint16_t)ADConeshot.get_adc_raw_read(my_reads, i);
-			cJSON_AddNumberToObject(fmt, "indx", personal_data_count);
-			cJSON_AddNumberToObject(fmt, "hist", own_raw_data[personal_data_count]);
-			ESP_LOGI(TAG, "raw data using uint16_t:%d", own_raw_data[personal_data_count]);
-			personal_data_count++;
-			if (personal_data_count >= ESPNOW_MAXIMUM_READINGS)
-			{
-				// We can do something interesting here
-				personal_data_count = 0; // Reset counter
-			}
-
-			// A little example of Pearson correlation computing
-			// For more vector information: https://www.codingninjas.com/studio/library/working-with-vectors-of-vectors-in-cpp
-			size_t sizex = (&x)[1] - x;
-			size_t sizey = (&y)[1] - y;
-			vector<uint16_t> xvect;
-			vector<uint16_t> yvect;
-			xvect.assign(x, x + sizex);
-			yvect.assign(y, y + sizey);
-			// Since negative correlation is also correlation that contributes to the
-			// model, we take the absolute correlation |r|.
-			double r = abs(AnomalyDetect.compute_pearson_correlation(xvect, yvect));
-			double z = AnomalyDetect.get_fisherz_tran(r);
-			double zinv = AnomalyDetect.get_inv_fisherz_tran(z);
-			ESP_LOGI(TAG, "Pearson Correlation (r):%f", r);
-			ESP_LOGI(TAG, "Fisher Z-Transform (z):%f", z);
-			ESP_LOGI(TAG, "Fisher Inverse Z-Transform (zinv):%f", zinv);
-
-			// Another little example of PEARSON-BASED LISA
-			// Example 1. Assume we have a set X = {X1 , X2 , X3 } of 3 time series of length n = 7 given by
-			// X1 = [4, 2, 2, 5, 9, 8, 3], X2 = [10, 5, 4, 2, 6, 8, 9], X3 = [6, 4, 10, 3, 1, 2, 8]. At position i = 5, window
-			// size w = 4 and time series index p = 2, the value for v25 is equal to 6. We compute the LISA value L(v25 )
-			// from positions [i − w + 1, . . . , i]:
-			// ESP_LOGI(TAG, "Pearson based LISA Start");
-			// vector<vector<uint16_t>> time_series_set{
-			// 	{4, 2, 2, 5, 9, 8, 3},
-			// 	{10, 5, 4, 2, 6, 8, 9},
-			// 	{6, 4, 10, 3, 1, 2, 8}};
-			// vector<vector<uint16_t>> time_series_set{
-			// 	{3369, 3338, 3102, 2943, 2815, 2683, 2682, 2666, 2729, 2920}, // X
-			// 	{3321, 3181, 3068, 2937, 2824, 2752, 2746, 2728, 2664, 2600}, // Y
-			// 	{3345, 3259, 3085, 2940, 2819, 2717, 2714, 2697, 2696, 2760}}; // med(x,y)
-			// uint8_t window_size = 4;
-			// uint8_t time_series_index_p = 2;
-			// double threshold = 0.4;
-
-			// vector<double> L_v_p_i;
-			// L_v_p_i = AnomalyDetect.pearson_based_LISA(time_series_set, window_size, time_series_index_p, threshold);
-			// ESP_LOGI(TAG, "Vector of predictive weights");
-			// for (size_t i = 0; i < L_v_p_i.size(); i++)
+			cJSON_AddNumberToObject(fmt, "dummy_val", ADConeshot.get_adc_raw_read(my_reads, i));
+			// own_raw_data[personal_data_count] = (uint16_t)ADConeshot.get_adc_raw_read(my_reads, i);
+			// cJSON_AddNumberToObject(fmt, "indx", personal_data_count);
+			// cJSON_AddNumberToObject(fmt, "hist", own_raw_data[personal_data_count]);
+			// ESP_LOGI(TAG, "raw data using uint16_t:%d", own_raw_data[personal_data_count]);
+			// personal_data_count++;
+			// if (personal_data_count >= ESPNOW_MAXIMUM_READINGS)
 			// {
-			// 	ESP_LOGI(TAG, "L_v_p_i[%d]:%f", i, L_v_p_i[i]);
+			// 	// We can do something interesting here
+			// 	personal_data_count = 0; // Reset counter
 			// }
-			// END of -Another little example of PEARSON-BASED LISA
 
-			// Another little example of DTW LISA
-			// Example 1. Assume we have a set X = {X1 , X2 , X3 } of 3 time series of length n = 7 given by
-			// X1 = [4, 2, 2, 5, 9, 8, 3], X2 = [10, 5, 4, 2, 6, 8, 9], X3 = [6, 4, 10, 3, 1, 2, 8]. At position i = 5, window
-			// size w = 4 and time series index p = 2, the value for v25 is equal to 6. We compute the LISA value L(v25 )
-			// from positions [i − w + 1, . . . , i]:
-			ESP_LOGI(TAG, "DTW based LISA Start");
-
-			vector<vector<uint16_t>> time_series_set{
-				{3369, 3338, 3102, 2943, 2815, 2683, 2682, 2666, 2729, 2920, 1000, 500}, // X
-				{3321, 3181, 3068, 2937, 2824, 2752, 2746, 2728, 2664, 2600, 2600, 2700}, // Y
-				{3345, 3259, 3085, 2940, 2819, 2717, 2714, 2697, 2696, 2760, 1800, 1600}}; // med(x,y)
-			uint8_t window_size = 4;
-			uint8_t time_series_index_p = 1;
-			double threshold = 0.4;
-
-			vector<double> L_v_p_i;
-			L_v_p_i = AnomalyDetect.DTW_based_LISA(time_series_set, window_size, time_series_index_p, threshold);
-			ESP_LOGI(TAG, "Vector of predictive weights");
-			for (size_t i = 0; i < L_v_p_i.size(); i++)
-			{
-				ESP_LOGI(TAG, "L_v_p_i[%d]:%f", i, L_v_p_i[i]);
-			}
-
-			// vector<uint16_t> X1{2, 2, 5, 9};
-			// vector<uint16_t> X2{5, 4, 2, 6};
-			// vector<uint16_t> X3{4, 10, 3, 1};
-			// AnomalyDetect.compute_accumulated_cost_matrix(X1, X2);
-			// vector<vector<int>> path;
-			// path = AnomalyDetect.path();
-			// std::cout << "DTW Path: " << std::endl;
-			// for (int i = 0; i < path.size(); ++i)
-			// 	std::cout << "i=" << path[i][0] << " j=" << path[i][1] << std::endl;
-
-			// END of -Another little example of DTW LISA
-			for (size_t i = 0; i < personal_data_count; i++)
-			{
-				ESP_LOGI(TAG, "%d Data of own_data_raw:%d", i, own_raw_data[i]);
-			}
+			// for (size_t i = 0; i < personal_data_count; i++)
+			// {
+			// 	ESP_LOGI(TAG, "%d Data of own_data_raw:%d", i, own_raw_data[i]);
+			// }
 		}
 
 		char *my_json_string = cJSON_PrintUnformatted(root);
@@ -300,16 +234,5 @@ void app_main(void)
 		free(my_reads);
 		cJSON_Delete(root);
 		cJSON_free(my_json_string);
-
-		switch (updateStatus)
-		{
-		case THERE_IS_AN_UPDATE_AVAILABLE:
-			clienteAP.init_update();
-			break;
-		case NO_UPDATE_FOUND:
-			// get deep sleep enter time
-			//						gotoSleep();
-			break;
-		}
 	}
 }

@@ -80,7 +80,7 @@ typedef struct
 struct struct_espnow
 { // esp-now message structure
   uint8_t msgType;
-  uint8_t payload[249];
+  uint8_t payload[500];
 };
 
 typedef struct

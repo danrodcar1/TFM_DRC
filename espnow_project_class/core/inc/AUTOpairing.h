@@ -1015,37 +1015,100 @@ public:
 			// a dormir?
 		}
 
-		_msgType = _msgType | ((panAddress << PAN_OFFSET) & MASK_PAN);
-		char *msg = messType2String(_msgType);
-		if (debug)
-			ESP_LOGI(TAG3, "Sending message type = %lld %s", dec2bin(_msgType), msg);
-		free(msg);
-
-		mensaje_enviado = true;
-		terminar = fin;
-		mensajes_sent++;
-
+		struct struct_espnow mensaje_esp;
+		espnow_send_cb_t resultado;
 		int size = strlen(mensaje);
 		if (size > 249)
 		{
-			ESP_LOGE(TAG3, "Error longitud del mensaje demasido grande: %d\n", size);
-			return ERROR_MSG_TOO_LARGE;
+			// Empieza el proceso de envío. Desactivo el deep sleep
+			int n = 1;
+			for (size_t i = 1; i < size; i++)
+			{
+				if (size % i == 0)
+				{
+					ESP_LOGI("* Divisores paquete", "El mensaje se puede dividir en %i paquetes de %i bytes", n, size / n);
+					n++;
+				}
+				if (n * i < 249)
+					break;
+			}
+			ESP_LOGI("* Divisores paquete", "El mensaje se dividirá en %i paquetes de %i bytes", n, size / n);
+			int parts = size / n + 1;
+			vector<string> sub_str;
+			string initial_str = mensaje;
+
+			// MIRAR ESTA WEB: https://www.appsloveworld.com/cplus/100/584/how-can-i-split-a-string-into-chunks-of-1024-with-iterator-and-string-view
+			// https://www.geeksforgeeks.org/char-vs-stdstring-vs-char-c/
+			// https://www.geeksforgeeks.org/convert-char-to-string-in-cpp/
+			// https://stackoverflow.com/questions/2392308/c-vector-of-char-array
+			// https://stackoverflow.com/questions/62111768/split-string-into-parts-of-equal-length-c
+			for (size_t i = 0; i < size; i += parts)
+			{
+				sub_str.push_back(initial_str.substr(i, parts));
+			}
+			ESP_LOGI("* Divisores paquete", "sub_str.size() = %d", sub_str.size());
+			for (int i = 0; i < sub_str.size(); i++)
+			{
+				terminar = false;
+				esperando = true;
+				esperando_pan = true;
+				timeOut += 500;
+				ESP_LOGI("* Divisores paquete", "Paquete %d, Contenido del paquete: %s", sub_str.size() - i - 1, sub_str[i].c_str());
+				char filename[parts + 1] = {0}; // Cadena de datos de longitud parts + 1 index_part + 1 caracter fin cadena
+				sprintf(filename, "%d%s", sub_str.size() - i - 1, sub_str[i].c_str());
+				ESP_LOGI("* Divisores paquete", "Paquete %d, Contenido del paquete: %s", sub_str.size() - i - 1, filename);
+				mensaje_esp.msgType = DATA;
+				if ((sub_str.size() - i - 1) == 0)
+				{
+					// Solicito mensajes PAN en el último envio de paquete
+					mensaje_esp.msgType = DATA | CHECK | ((panAddress << PAN_OFFSET) & MASK_PAN);
+					char *msg = messType2String(mensaje_esp.msgType);
+					if (debug)
+						ESP_LOGI(TAG3, "Sending message type = %lld %s", dec2bin(_msgType), msg);
+					free(msg);
+				}
+				memcpy(mensaje_esp.payload, filename, strlen(filename));
+				if (debug)
+					ESP_LOGI(TAG3, "Longitud del mensaje: %d\n", strlen(filename));
+				if (debug)
+					ESP_LOGI(TAG3, "mensaje: %s\n", filename);
+				esp_now_send(pairingData.macAddr, (uint8_t *)&mensaje_esp, strlen(filename) + 1);
+				if (debug)
+					ESP_LOGI(TAG3, "ESPERANDO RESULTADO ENVIO");
+				if (xQueueReceive(cola_resultado_enviados, &resultado, 200 / portTICK_PERIOD_MS) == pdFALSE)
+				{
+					ESP_LOGE(TAG3, "Error esperando resultado envío");
+					return ERROR_SIN_RESPUESTA;
+				}
+				mensajes_sent++;
+			}
+			mensaje_enviado = true;
+			terminar = true;
 		}
-		struct struct_espnow mensaje_esp;
-		mensaje_esp.msgType = _msgType;
-		memcpy(mensaje_esp.payload, mensaje, size);
-		if (debug)
-			ESP_LOGI(TAG3, "Longitud del mensaje: %d\n", size);
-		if (debug)
-			ESP_LOGI(TAG3, "mensaje: %s\n", mensaje);
-		esp_now_send(pairingData.macAddr, (uint8_t *)&mensaje_esp, size + 1);
-		espnow_send_cb_t resultado;
-		if (debug)
-			ESP_LOGI(TAG3, "ESPERANDO RESULTADO ENVIO");
-		if (xQueueReceive(cola_resultado_enviados, &resultado, 200 / portTICK_PERIOD_MS) == pdFALSE)
+		else
 		{
-			ESP_LOGE(TAG3, "Error esperando resultado envío");
-			return ERROR_SIN_RESPUESTA;
+			_msgType = _msgType | ((panAddress << PAN_OFFSET) & MASK_PAN);
+			char *msg = messType2String(_msgType);
+			if (debug)
+				ESP_LOGI(TAG3, "Sending message type = %lld %s", dec2bin(_msgType), msg);
+			free(msg);
+			mensaje_enviado = true;
+			terminar = fin;
+			mensajes_sent++;
+			mensaje_esp.msgType = _msgType;
+			memcpy(mensaje_esp.payload, mensaje, size);
+			if (debug)
+				ESP_LOGI(TAG3, "Longitud del mensaje: %d\n", size);
+			if (debug)
+				ESP_LOGI(TAG3, "mensaje: %s\n", mensaje);
+			esp_now_send(pairingData.macAddr, (uint8_t *)&mensaje_esp, size + 1);
+			if (debug)
+				ESP_LOGI(TAG3, "ESPERANDO RESULTADO ENVIO");
+			if (xQueueReceive(cola_resultado_enviados, &resultado, 200 / portTICK_PERIOD_MS) == pdFALSE)
+			{
+				ESP_LOGE(TAG3, "Error esperando resultado envío");
+				return ERROR_SIN_RESPUESTA;
+			}
 		}
 		// chequar resultado y ver que hacemos
 		// también habría que limitar la espera a 100ms por ejemplo
