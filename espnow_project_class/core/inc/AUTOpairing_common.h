@@ -54,6 +54,7 @@
 #define PAN_MSold_size 4
 #define PAN_payload_offset 11 //(1+6+4)
 
+#define ESPNOW_CTRL_BYTE 1
 #define ESPNOW_MAXIMUM_READINGS 150
 
 typedef enum
@@ -80,7 +81,9 @@ typedef struct
 struct struct_espnow
 { // esp-now message structure
   uint8_t msgType;
-  uint8_t payload[500];
+  //uint8_t topic[100];
+  uint8_t mac_addr[ESP_NOW_ETH_ALEN];
+  uint8_t payload[243];
 };
 
 typedef struct

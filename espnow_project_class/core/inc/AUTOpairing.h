@@ -78,7 +78,7 @@ static uint8_t s_example_broadcast_mac[ESP_NOW_ETH_ALEN] = {0xFF, 0xFF, 0xFF, 0x
 
 // uint8_t mac_address[6] = {0x00, 0x11, 0x22, 0x33, 0x44, 0x55};
 
-uint8_t mac_personal[6] = {0};
+uint8_t device_mac[6] = {0};
 
 static const char *TAG = "* mainApp";
 static const char *TAG2 = "* adc_reads";
@@ -151,7 +151,8 @@ class AUTOpairing_t
 	bool nvs_start;
 	uint8_t espnow_channel;
 	int wakeup_time_sec;
-	uint16_t panAddress;
+	uint32_t panAddress;
+	uint16_t appAddress;
 	const char *fw_upgrade_url;
 	const char *wifi_ssid;
 	const char *wifi_pass;
@@ -172,6 +173,7 @@ public:
 		rtc_init = false;
 		wakeup_time_sec = 10; // tiempo dormido en segundos
 		panAddress = 1;
+		appAddress = 1;
 		config_size = MAX_CONFIG_SIZE;
 		start_time = 0; // para controlar el tiempo de escaneo
 		previousMillis_scanChannel = 0;
@@ -497,26 +499,47 @@ public:
 		ESP_LOGI("* Print MAC", "%02X:%02X:%02X:%02X:%02X:%02X", mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
 	}
 	//-----------------------------------------------------------
-	void set_pan(uint16_t _pan = 1)
+	void set_app_area(uint32_t _pan = 1, uint16_t _app = 1)
 	{
-		panAddress = _pan;
-		/* PRUEBA MAC PERSONALIZABLE */
+		// 	Input :_pan: an indicator about personal area network where is located the device,
+		// _app: number of the application inside PAN.
+		// Design a personal MAC with the data input in the bytes for local devices.
+		//  ------------------------------
+		// |0x22:0x00:0x00:0x00:0x00:0x00 |
+		//  ------------------------------
+		// -> First byte in local mode with number 2
+		// -> Following two bytes are the application number
+		// -> Last three bytes corresponds to the PAN identifier
 		// Ver esta web: https://www.reddit.com/r/embedded/comments/13ayil0/is_there_a_way_to_store_uint16_t_data_onto_a/
 		// Ver esta web: https://stackoverflow.com/questions/31320242/deletion-using-memcpy-in-an-array
-		uint8_t pan_uni[2] = {0};
-		uint8_t mac_base[6] = {0};
+		// Ver esta web: https://www.reddit.com/r/embedded/comments/13ayil0/is_there_a_way_to_store_uint16_t_data_onto_a/
+		// Ver esta web: https://es.wikipedia.org/wiki/Operador_a_nivel_de_bits
+		// Ver esta web: https://electronics.stackexchange.com/questions/523334/how-to-split-uint32-into-four-uint8-in-efr32
+		// Ver esta web: https://stackoverflow.com/questions/12120426/how-do-i-print-uint32-t-and-uint16-t-variables-value
+		// Ver esta web: https://www.electrosoftcloud.com/operaciones-bit-a-bit-bitwise/
+		ESP_LOGI("* Prueba generar MAC", "Inicio");
+		panAddress = _pan;
+		appAddress = _app;
+		uint8_t pan_uni[3] = {0};
+		uint8_t app_uni[2] = {0};
 		uint8_t mac_uni_base[6] = {0};
-		pan_uni[1] = panAddress & 0xFF;			 // LSB
-		pan_uni[0] = (panAddress & 0xFF00) >> 8; // MSB
-		print_mac(pan_uni);
-		esp_efuse_mac_get_default(mac_base);
-		esp_read_mac(mac_base, ESP_MAC_WIFI_STA);
-		esp_derive_local_mac(mac_personal, mac_uni_base);
-		print_mac(mac_base);
-		memmove(&mac_personal[3], &mac_base[3], 3 * sizeof(mac_base[0]));
-		memmove(&mac_personal[1], &pan_uni[0], 2 * sizeof(pan_uni[0]));
-		print_mac(mac_personal);
-		/* FIN PRUEBA MAC PERSONALIZABLE*/
+		ESP_LOGI("* Print MAC", "PAN number: %lu", panAddress);
+		char byte = (sizeof(pan_uni) - 1) * 8;
+		for (int i = 0; i < sizeof(pan_uni); i++)
+		{
+			pan_uni[i] = (panAddress >> byte) & 0xFF;
+			if (i < (sizeof(pan_uni) - 1))
+				app_uni[i] = (appAddress >> (byte - 8)) & 0xFF;
+			byte = byte - 8;
+		}
+		ESP_LOGI("* Print MAC", "pan_uni: %02X:%02X:%02X", pan_uni[0], pan_uni[1], pan_uni[2]);
+		ESP_LOGI("* Print MAC", "app_uni: %02X:%02X", app_uni[0], app_uni[1]);
+		esp_derive_local_mac(device_mac, mac_uni_base);
+		device_mac[0] = device_mac[0] | 0x20;
+		print_mac(device_mac);
+		memmove(&device_mac[1], &app_uni[0], 2 * sizeof(app_uni[0]));
+		memmove(&device_mac[3], &pan_uni[0], 3 * sizeof(pan_uni[0]));
+		print_mac(device_mac);
 	}
 	//-----------------------------------------------------------
 	int get_pan() { return panAddress; }
@@ -761,7 +784,7 @@ public:
 			// ESP_LOGI(TAG5, "Wifi setting channel  = %d\n", pairingData.channel);
 			// ESP_ERROR_CHECK(esp_wifi_set_promiscuous(false));
 
-			ESP_ERROR_CHECK(esp_wifi_set_mac(WIFI_IF_STA, &mac_personal[0]));
+			// ESP_ERROR_CHECK(esp_wifi_set_mac(WIFI_IF_STA, &device_mac[0]));
 			ESP_ERROR_CHECK(esp_wifi_start());
 
 			ESP_ERROR_CHECK(esp_wifi_set_channel(pairingData.channel, WIFI_SECOND_CHAN_NONE));
@@ -993,17 +1016,25 @@ public:
 		esp_now_send(pairingData.macAddr, (uint8_t *)&mensaje_esp, 1);
 	}
 
-	bool espnow_send_check(char *mensaje, bool fin = true, uint8_t _msgType = DATA)
+	bool espnow_send_check(char *topic, char *mensaje, bool fin = true, uint8_t _msgType = DATA)
 	{
 		esperando = true;
 		esperando_pan = true;
 		timeOut += 500;
-		return espnow_send(mensaje, fin, _msgType | CHECK);
+		return espnow_send(topic, mensaje, fin, _msgType | CHECK);
 	}
 
 	//-----------------------------------------------------------
-	uint8_t espnow_send(char *mensaje, bool fin = true, uint8_t _msgType = DATA)
+	uint8_t espnow_send(char *topic, char *mensaje, bool fin = true, uint8_t _msgType = DATA)
 	{
+		// Ver esta web: https://es.stackoverflow.com/questions/23186/cual-es-la-diferencia-entre-char-name-y-char-name-en-c
+		// Ver esta web: https://cplusplus.com/reference/cstring/memcpy/
+		// Ver esta web: https://forum.arduino.cc/t/solved-uint8_t-buffer-to-string/329938
+		// Ver esta web: https://forum.arduino.cc/t/how-to-convert-char-to-string/499073
+		// Ver esta web: https://cplusplus.com/reference/cstdio/snprintf/
+		// Ver esta web: https://stackoverflow.com/questions/1472048/how-to-append-a-char-to-a-stdstring
+		// Ver esta web: https://cplusplus.com/reference/vector/vector/push_back/
+		// Ver esta web: https://www.w3schools.com/cpp/cpp_strings_length.asp
 		if (debug)
 			ESP_LOGI(TAG3, "ESPERANDO SEMAFORO ENVIO");
 
@@ -1016,9 +1047,15 @@ public:
 		}
 
 		struct struct_espnow mensaje_esp;
+		memcpy(mensaje_esp.mac_addr, device_mac, ESP_NOW_ETH_ALEN);
+		print_mac(mensaje_esp.mac_addr);
 		espnow_send_cb_t resultado;
+		string incoming_topic = topic;
+		incoming_topic += string(1, '|');
+		ESP_LOGI("* Divisores paquete", "Topic: %s, tamaño topic: %d", incoming_topic.c_str(), incoming_topic.length());
+		int full_msg_size = strlen(mensaje) + incoming_topic.length(); // 6 bytes MAC + 1 byte CTRL
 		int size = strlen(mensaje);
-		if (size > 249)
+		if ((ESPNOW_CTRL_BYTE + ESP_NOW_ETH_ALEN + full_msg_size) > 249)
 		{
 			// Empieza el proceso de envío. Desactivo el deep sleep
 			int n = 1;
@@ -1033,15 +1070,15 @@ public:
 					break;
 			}
 			ESP_LOGI("* Divisores paquete", "El mensaje se dividirá en %i paquetes de %i bytes", n, size / n);
-			int parts = size / n + 1;
+			int parts = size / n + 1; // Se incluye el índice de la parte al tamaño
 			vector<string> sub_str;
 			string initial_str = mensaje;
 
-			// MIRAR ESTA WEB: https://www.appsloveworld.com/cplus/100/584/how-can-i-split-a-string-into-chunks-of-1024-with-iterator-and-string-view
-			// https://www.geeksforgeeks.org/char-vs-stdstring-vs-char-c/
-			// https://www.geeksforgeeks.org/convert-char-to-string-in-cpp/
-			// https://stackoverflow.com/questions/2392308/c-vector-of-char-array
-			// https://stackoverflow.com/questions/62111768/split-string-into-parts-of-equal-length-c
+			// Ver esta web: https://www.appsloveworld.com/cplus/100/584/how-can-i-split-a-string-into-chunks-of-1024-with-iterator-and-string-view
+			// Ver esta web: https://www.geeksforgeeks.org/char-vs-stdstring-vs-char-c/
+			// Ver esta web: https://www.geeksforgeeks.org/convert-char-to-string-in-cpp/
+			// Ver esta web: https://stackoverflow.com/questions/2392308/c-vector-of-char-array
+			// Ver esta web: https://stackoverflow.com/questions/62111768/split-string-into-parts-of-equal-length-c
 			for (size_t i = 0; i < size; i += parts)
 			{
 				sub_str.push_back(initial_str.substr(i, parts));
@@ -1054,8 +1091,8 @@ public:
 				esperando_pan = true;
 				timeOut += 500;
 				ESP_LOGI("* Divisores paquete", "Paquete %d, Contenido del paquete: %s", sub_str.size() - i - 1, sub_str[i].c_str());
-				char filename[parts + 1] = {0}; // Cadena de datos de longitud parts + 1 index_part + 1 caracter fin cadena
-				sprintf(filename, "%d%s", sub_str.size() - i - 1, sub_str[i].c_str());
+				char filename[incoming_topic.length() + parts + 1] = {0}; // Cadena de datos de longitud incoming_topic.length() + parts (incluye + 1 index_part) + 1 caracter fin cadena
+				sprintf(filename, "%s%d%s", incoming_topic.c_str(), sub_str.size() - i - 1, sub_str[i].c_str());
 				ESP_LOGI("* Divisores paquete", "Paquete %d, Contenido del paquete: %s", sub_str.size() - i - 1, filename);
 				mensaje_esp.msgType = DATA;
 				if ((sub_str.size() - i - 1) == 0)
@@ -1067,12 +1104,12 @@ public:
 						ESP_LOGI(TAG3, "Sending message type = %lld %s", dec2bin(_msgType), msg);
 					free(msg);
 				}
-				memcpy(mensaje_esp.payload, filename, strlen(filename));
+				memcpy(mensaje_esp.payload, filename, strlen(filename) + 1);
 				if (debug)
 					ESP_LOGI(TAG3, "Longitud del mensaje: %d\n", strlen(filename));
 				if (debug)
 					ESP_LOGI(TAG3, "mensaje: %s\n", filename);
-				esp_now_send(pairingData.macAddr, (uint8_t *)&mensaje_esp, strlen(filename) + 1);
+				esp_now_send(pairingData.macAddr, (uint8_t *)&mensaje_esp, sizeof(mensaje_esp));
 				if (debug)
 					ESP_LOGI(TAG3, "ESPERANDO RESULTADO ENVIO");
 				if (xQueueReceive(cola_resultado_enviados, &resultado, 200 / portTICK_PERIOD_MS) == pdFALSE)
@@ -1096,12 +1133,32 @@ public:
 			terminar = fin;
 			mensajes_sent++;
 			mensaje_esp.msgType = _msgType;
-			memcpy(mensaje_esp.payload, mensaje, size);
+			char filename[full_msg_size + 1] = {0}; // Tamaño mensaje completo + 1 caracter fin cadena
+			sprintf(filename, "%s%s", incoming_topic.c_str(), mensaje);
+			ESP_LOGI(TAG3, "Contenido del paquete: %s", filename);
+			memcpy(mensaje_esp.payload, filename, strlen(filename) + 1);
+			ESP_LOGI(TAG3, "Contenido del paquete: %s, longitud del paquete: %d", mensaje_esp.payload, strlen(filename));
 			if (debug)
 				ESP_LOGI(TAG3, "Longitud del mensaje: %d\n", size);
 			if (debug)
 				ESP_LOGI(TAG3, "mensaje: %s\n", mensaje);
-			esp_now_send(pairingData.macAddr, (uint8_t *)&mensaje_esp, size + 1);
+			if (debug)
+				ESP_LOGI(TAG3, "Longitud del mensaje completo: %d\n", full_msg_size);
+			ESP_LOGI(TAG3, "Longitud sizeof(mensaje_esp): %d\n", sizeof(mensaje_esp));
+
+			/* Set primary master key. */
+			/* Add broadcast peer information to peer list. */
+			esp_now_peer_info_t peer;
+			peer.channel = pairingData.channel;
+			peer.ifidx = ESPNOW_WIFI_IF;
+			peer.encrypt = false;
+			memcpy(peer.peer_addr, s_example_broadcast_mac, ESP_NOW_ETH_ALEN);
+			ESP_ERROR_CHECK(esp_now_add_peer(&peer));
+
+			ESP_LOGI(TAG3, "espnow_channel: %d", peer.channel);
+			// Ver esta web: https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-guides/wireshark-user-guide.html
+			// Ver esta web: https://www.instructables.com/ESPNow-a-Deeper-Look-Unicast-Vs-Broadcast-ACKs-Ret/
+			esp_now_send(s_example_broadcast_mac, (uint8_t *)&mensaje_esp, sizeof(mensaje_esp));
 			if (debug)
 				ESP_LOGI(TAG3, "ESPERANDO RESULTADO ENVIO");
 			if (xQueueReceive(cola_resultado_enviados, &resultado, 200 / portTICK_PERIOD_MS) == pdFALSE)

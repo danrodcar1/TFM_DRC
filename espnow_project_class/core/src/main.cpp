@@ -54,22 +54,6 @@ RTC_DATA_ATTR static uint16_t peer_raw_data[ESPNOW_MAXIMUM_READINGS]; // Datos p
 RTC_DATA_ATTR uint8_t personal_data_count = 0;
 RTC_DATA_ATTR uint8_t incoming_data_count = 0;
 
-// Signal saved in RTC Memory
-uint16_t x[] = {
-	2904, 2907, 2904, 2924, 2939, 2922, 2926, 2927, 2922, 2926, 2920, 2937, 2920, 2927, 2939, 2923, 2871, 2909, 2935, 2936, 2925, 2926, 2921, 2926, 2874,
-	2873, 2920, 2911, 2921, 2928, 2909, 2896, 2696, 2664, 2635, 2635, 2732, 2957, 2936, 2890, 2863, 2814, 2777, 2744, 2863, 2987, 2987, 2924, 2765, 2712,
-	2655, 2650, 2841, 3020, 3049, 3047, 3032, 3035, 3047, 3038, 3054, 3034, 3036, 3021, 3053, 3258, 3479, 3563, 3613, 3624, 3611, 3598, 3593, 3535, 3454,
-	3369, 3338, 3102, 2943, 2815, 2683, 2682, 2666, 2729, 2920, 3080, 3110, 3127, 3118, 3144, 3115, 3335, 3480, 3550, 3626, 3631, 3643, 3638, 3658, 3661,
-	3677, 3676, 3735, 3755, 3757, 3768, 3753, 3791, 3806, 3854, 3853, 3852, 3806, 3818, 3806, 3788, 3786, 3757, 3676, 3678, 3708, 3774, 3791, 3837, 3897,
-	3919, 3933, 3929, 3963, 3995, 3994, 3998, 4042, 4070, 4095, 4095, 4095, 4040, 3966, 3775, 3711, 3676, 3639, 3611, 3576, 3546, 3560, 3504, 3406, 3289};
-uint16_t y[] = {
-	3340, 3325, 3358, 3389, 3388, 3391, 3369, 3383, 3386, 3358, 3375, 3369, 3354, 3358, 3384, 3372, 3369, 3371, 3368, 3370, 3374, 3368, 3324, 3328, 3367,
-	3420, 3451, 3406, 3306, 3258, 3177, 3099, 3004, 2790, 2621, 2550, 2408, 2424, 2471, 2576, 2647, 2601, 2494, 2345, 2205, 2048, 1932, 1882, 1902, 1947,
-	1944, 1963, 1992, 1991, 1980, 2025, 2104, 2333, 2744, 2983, 3287, 3391, 3404, 3407, 3403, 3418, 3432, 3391, 3388, 3498, 3672, 3819, 3932, 3980, 4027,
-	4046, 4093, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095, 3915, 3567, 3515, 3446, 3321, 3181, 3068, 2937, 2824, 2752, 2746, 2728, 2664, 2600,
-	2524, 2426, 2474, 2510, 2544, 2525, 2524, 2455, 2475, 2494, 2477, 2456, 2426, 2413, 2424, 2429, 2430, 2361, 2300, 2267, 2221, 2204, 2223, 2301, 2361,
-	2409, 2424, 2425, 2408, 2379, 2381, 2394, 2414, 2521, 2505, 2521, 2539, 2542, 2535, 2542, 2524, 2522, 2490, 2477, 2490, 2585, 2715, 2782, 2906, 2910};
-
 // https://github.com/DaveGamble/cJSON#building
 
 void pan_process_msg(struct_espnow_rcv_msg *my_msg)
@@ -147,7 +131,7 @@ void mqtt_process_msg(struct_espnow_rcv_msg *my_msg)
 		clienteAP.init_update(); // ¿Porque funciona en app_main y aqui no? :(
 
 		// Añadir en main si se quiere funcionalidad
-		
+
 		// switch (updateStatus)
 		// {
 		// case THERE_IS_AN_UPDATE_AVAILABLE:
@@ -179,18 +163,19 @@ void app_main(void)
 	clienteAP.set_deepSleep(strConfig.tsleep);		// tiempo dormido en segundos
 	ESP_LOGI("Config debug", "Timeout = %d", strConfig.timeout);
 	ESP_LOGI("Config debug", "Timesleep = %d", strConfig.tsleep);
-	clienteAP.set_channel(1); // canal donde empieza el scaneo
-	clienteAP.set_pan(2);
+	clienteAP.set_channel(1);						   // canal donde empieza el scaneo
+	clienteAP.set_app_area(4, 5);					   // indico PAN y aplicación a la que pertenece
 	clienteAP.set_mqtt_msg_callback(mqtt_process_msg); // por defecto a NULL -> no se llama a ninguna función
 	clienteAP.set_pan_msg_callback(pan_process_msg);
 	clienteAP.begin();
+
 	if (clienteAP.envio_disponible() == true)
 	{
 		cJSON *root, *fmt;
 		const esp_partition_t *running = esp_ota_get_running_partition();
 		esp_app_desc_t running_app_info;
 		char tag[25];
-		ADConeshot.adc_init(my_reads);
+		// ADConeshot.adc_init(my_reads);
 
 		root = cJSON_CreateObject();
 		if (esp_ota_get_partition_description(running, &running_app_info) == ESP_OK)
@@ -204,33 +189,18 @@ void app_main(void)
 			sprintf(tag, "Sensor%d", i);
 			cJSON_AddItemToObject(root, tag, fmt = cJSON_CreateObject());
 
-			// cJSON_AddNumberToObject(fmt, "adc_filtered", ADConeshot.get_adc_filtered_read(my_reads, i));
-			cJSON_AddNumberToObject(fmt, "adc_voltage", ADConeshot.get_adc_voltage_read(my_reads, i));
-			cJSON_AddNumberToObject(fmt, "raw_voltage", ADConeshot.get_adc_raw_read(my_reads, i));
-			cJSON_AddNumberToObject(fmt, "dummy_val", ADConeshot.get_adc_raw_read(my_reads, i));
-			// own_raw_data[personal_data_count] = (uint16_t)ADConeshot.get_adc_raw_read(my_reads, i);
-			// cJSON_AddNumberToObject(fmt, "indx", personal_data_count);
-			// cJSON_AddNumberToObject(fmt, "hist", own_raw_data[personal_data_count]);
-			// ESP_LOGI(TAG, "raw data using uint16_t:%d", own_raw_data[personal_data_count]);
-			// personal_data_count++;
-			// if (personal_data_count >= ESPNOW_MAXIMUM_READINGS)
-			// {
-			// 	// We can do something interesting here
-			// 	personal_data_count = 0; // Reset counter
-			// }
-
-			// for (size_t i = 0; i < personal_data_count; i++)
-			// {
-			// 	ESP_LOGI(TAG, "%d Data of own_data_raw:%d", i, own_raw_data[i]);
-			// }
+			cJSON_AddNumberToObject(fmt, "adc_voltage", 1234);
+			//cJSON_AddNumberToObject(fmt, "raw_voltage", 1234);
+			//cJSON_AddNumberToObject(fmt, "dummy_val", 1234);
 		}
-
+		// Build topic from incoming message and public
+		char *send_topic = "unbuentopic/tienecache";
 		char *my_json_string = cJSON_PrintUnformatted(root);
 		size_t msg_size = strlen(my_json_string);
 		ESP_LOGI(TAG, "my_json_string\n%s", my_json_string);
 		ESP_LOGI("* Tamaño paquete", "El mensaje ocupa %i bytes", msg_size);
 
-		clienteAP.espnow_send_check(my_json_string); // hará deepsleep por defecto
+		clienteAP.espnow_send_check(send_topic, my_json_string); // hará deepsleep por defecto
 		free(my_reads);
 		cJSON_Delete(root);
 		cJSON_free(my_json_string);
